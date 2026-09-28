@@ -22,7 +22,7 @@ class Settings:
     # Action chunks: longest chunk the model may plan, and mid-chunk frames on `observe: keyframes`.
     max_chunk_ms: int = 3000
     keyframes: int = 2
-    # Compact the thread once its context passes this many tokens.
+    # The app-server compacts the thread once its context passes this many tokens.
     compact_after_tokens: int = 600_000
     extra_instructions: list[str] = field(default_factory=list)
 
