@@ -26,9 +26,17 @@ On the Windows gaming PC with the game on screen:
 uv run python run.py
 ```
 
-An on-screen controller (`SHOW_PAD` in `run.py`) shows what the agent is pressing, and you can
-click it to add your own input to the same pad. To drive the virtual pad yourself with no agent:
-`uv run python pad.py`.
+Start the pad first and leave it open for the whole session:
+
+```bash
+uv run python pad.py   # plugs in one virtual controller + shows it on screen
+uv run python run.py   # connects to that pad; restart freely, the controller stays the same
+```
+
+A virtual controller only lives as long as the process that created it, so `pad.py` owns it and
+`run.py` streams its inputs there over localhost. The window shows what the agent is pressing,
+and you can click it to add your own input (it never takes focus from the game). Without
+`pad.py`, `run.py` plugs in its own controller for that run.
 
 Every session is recorded to `runs/<timestamp>/` (frames + `events.jsonl`).
 

@@ -10,8 +10,10 @@ import logging
 from pathlib import Path
 
 from it_takes_me.config import Settings
+from it_takes_me.game.io import GameIO
 from it_takes_me.game.pad_gui import PadMixer, start_pad_window
-from it_takes_me.game.windows import WindowsGameIO
+from it_takes_me.game.pad_host import RemotePadIO, connect_pad
+from it_takes_me.game.windows import ScreenCapture, WindowsGameIO
 from it_takes_me.inference.player import AstraPlayer
 from it_takes_me.inference.runtime import CodexRuntime
 from it_takes_me.inference.tools import build_game_tools
@@ -28,7 +30,7 @@ REASONING_EFFORT = "medium"
 CHARACTER = "May"
 
 MONITOR = 1  # mss monitor index the game is on (1 = primary)
-SHOW_PAD = True  # on-screen controller showing the agent's inputs; you can click it too
+SHOW_PAD = True  # on-screen controller when run.py owns the pad (pad.py shows its own)
 
 MAX_TURNS: int | None = None
 MAX_TOOL_CALLS_PER_TURN = 40
@@ -66,9 +68,21 @@ def main() -> None:
         extra_instructions=list(EXTRA_INSTRUCTIONS),
     )
 
-    game = PadMixer(WindowsGameIO(monitor=MONITOR))
-    if SHOW_PAD:
-        start_pad_window(game, title=f"{CHARACTER} pad")
+    game: GameIO
+    sock = connect_pad()
+    if sock is not None:
+        # pad.py owns the controller (and its on-screen window); we only stream inputs to it.
+        game = RemotePadIO(ScreenCapture(monitor=MONITOR), sock)
+        console.print("using the pad from pad.py")
+    else:
+        console.print(
+            "[yellow]pad.py is not running: plugging in a new controller for this run only. "
+            "Start pad.py first to keep one controller across runs.[/yellow]"
+        )
+        mixer = PadMixer(WindowsGameIO(monitor=MONITOR))
+        if SHOW_PAD:
+            start_pad_window(mixer, title=f"{CHARACTER} pad")
+        game = mixer
     recorder = RunRecorder(settings.runs_dir)
     console.print(f"recording to {recorder.dir}")
     tools = build_game_tools(

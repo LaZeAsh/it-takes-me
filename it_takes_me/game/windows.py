@@ -39,21 +39,14 @@ def _clamp(v: float) -> float:
     return max(-1.0, min(1.0, float(v)))
 
 
-class WindowsGameIO:
+class ScreenCapture:
+    """The observation half of `GameIO`: grabs one monitor with mss."""
+
     def __init__(self, monitor: int = 1) -> None:
         import mss  # lazy: only importable/meaningful on the gaming PC
-        import vgamepad as vg  # pyright: ignore[reportMissingImports] - Windows-only package
 
         self._sct = mss.mss()
         self._monitor = self._sct.monitors[monitor]
-        self._vg: Any = vg
-        self._pad: Any = vg.VX360Gamepad()
-        # Give the game a moment to enumerate the new controller.
-        self._pad.reset()
-        self._pad.update()
-        time.sleep(0.5)
-
-    # -- observation -------------------------------------------------------------------------
 
     def _grab(self) -> Image.Image:
         shot = self._sct.grab(self._monitor)
@@ -66,6 +59,22 @@ class WindowsGameIO:
 
     def snapshot(self, size: tuple[int, int]) -> Image.Image:
         return self._grab().convert("L").resize(size, Image.Resampling.BILINEAR, reducing_gap=2.0)
+
+    def close(self) -> None:
+        self._sct.close()
+
+
+class WindowsGameIO(ScreenCapture):
+    def __init__(self, monitor: int = 1) -> None:
+        import vgamepad as vg  # pyright: ignore[reportMissingImports] - Windows-only package
+
+        super().__init__(monitor)
+        self._vg: Any = vg
+        self._pad: Any = vg.VX360Gamepad()
+        # Give the game a moment to enumerate the new controller.
+        self._pad.reset()
+        self._pad.update()
+        time.sleep(0.5)
 
     # -- input ---------------------------------------------------------------------------------
 
@@ -89,4 +98,4 @@ class WindowsGameIO:
         self.set_pad(NEUTRAL)
         self._pad.reset()
         self._pad.update()
-        self._sct.close()
+        super().close()

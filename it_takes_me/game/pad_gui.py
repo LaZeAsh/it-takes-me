@@ -11,6 +11,7 @@ Mouse: left-click and hold a button to press it; drag a stick; right-click a sti
 from __future__ import annotations
 
 import math
+import sys
 import threading
 import tkinter as tk
 from typing import TYPE_CHECKING
@@ -102,6 +103,7 @@ class PadWindow:
         self.root.title(title)
         self.root.resizable(False, False)
         self.root.attributes("-topmost", True)
+        _never_take_focus(self.root)
         self.canvas = tk.Canvas(self.root, width=W, height=H, bg=BG, highlightthickness=0)
         self.canvas.pack()
 
@@ -272,6 +274,22 @@ def start_pad_window(mixer: PadMixer, title: str = "pad") -> threading.Thread:
     thread = threading.Thread(target=_run, daemon=True, name="pad-window")
     thread.start()
     return thread
+
+
+def _never_take_focus(root: tk.Tk) -> None:
+    """Keep the game focused while the pad is clicked: games (Unreal included) drop controller
+    input while their window is in the background, so a focus-stealing pad would do nothing."""
+    if sys.platform != "win32":
+        return
+    import ctypes
+
+    gwl_exstyle, ws_ex_noactivate, ws_ex_appwindow = -20, 0x08000000, 0x00040000
+    root.update_idletasks()
+    hwnd = int(root.wm_frame(), 16)
+    user32 = ctypes.windll.user32
+    style = user32.GetWindowLongPtrW(hwnd, gwl_exstyle)
+    # APPWINDOW keeps it in the taskbar, which NOACTIVATE would otherwise hide it from.
+    user32.SetWindowLongPtrW(hwnd, gwl_exstyle, style | ws_ex_noactivate | ws_ex_appwindow)
 
 
 def _label(button: Button) -> str:
