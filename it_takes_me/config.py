@@ -27,5 +27,10 @@ class Settings:
     extra_instructions: list[str] = field(default_factory=list)
 
     @property
+    def screen_half(self) -> str:
+        """Half of the split screen showing `character`: May is always left, Cody right."""
+        return "left" if self.character == "May" else "right"
+
+    @property
     def cwd(self) -> Path:
         return Path.cwd()

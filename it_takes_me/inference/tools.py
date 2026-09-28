@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from it_takes_me.game.chunks import (
+    CONDITIONS,
     DIRECTIONS,
     LOOK_DIRECTIONS,
     MAX_CHUNK_MS,
@@ -137,6 +138,7 @@ _STEP_SCHEMA: dict[str, Any] = {
         "left": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
         "right": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
         "buttons": {"type": "array", "items": _BUTTON},
+        "until": {"type": "array", "items": {"type": "string", "enum": list(CONDITIONS)}},
     },
     "required": ["skill"],
     "additionalProperties": False,
@@ -151,7 +153,7 @@ more: you will see the result and plan again.
 back-left, back-right, none. Every skill except wait/raw accepts `dir` (steer while doing it).
 
 Skills:
-- run {{dir, ms=500, sprint?}}: move with the left stick.
+- run {{dir, ms=500, sprint?, until?}}: move with the left stick.
 - jump {{dir}}: one jump, including airtime.
 - double_jump {{dir}}: jump, then jump again in the air (longer/higher gaps).
 - dash {{dir}}: quick dash (works in the air too).
@@ -161,9 +163,16 @@ Skills:
 - grapple {{dir}}: RB, grapple to a rope point in range.
 - ability {{button: LT|RT, dir, ms=300}}: hold a chapter ability trigger.
 - look {{look: left|right|up|down, dir, ms=200}}: turn the camera.
-- wait {{ms=500}}: stand still.
+- wait {{ms=500, until?}}: stand still.
 - raw {{ms, left: [x,y], right: [x,y], buttons: [...]}}: exact pad state for ms, for anything \
 the skills cannot express. Sticks in [-1, 1], +y is forward/up.
+
+`until` (run and wait only) turns `ms` into a timeout and ends the step early when a check \
+fires; the rest of the chunk is then skipped and you are told which check fired:
+- stuck: your view stopped changing while you were moving (walked into a wall or ledge).
+- cut: the screen changed abruptly (cutscene, fade, respawn, menu).
+Use it for longer traversal, e.g. run forward ms=3000 until [stuck, cut], or wait until [cut] \
+through a cutscene.
 
 `observe`: "end" (default) returns the frame after the chunk; "keyframes" also returns \
 {{n}} frames from during the chunk, to see why a jump or sequence went wrong."""
@@ -175,6 +184,7 @@ def build_game_tools(
     frame_after_action: bool = True,
     keyframes: int = 2,
     max_chunk_ms: int = MAX_CHUNK_MS,
+    screen_half: str = "left",
     on_frame: Callable[[bytes, str], object] | None = None,
     on_say: Callable[[str], None] | None = None,
     max_calls_per_turn: int | None = None,
@@ -197,10 +207,19 @@ def build_game_tools(
         intent = str(a.get("intent", "")).strip()
         observe = a.get("observe", "end")
         segments = compile_chunk(steps, max_chunk_ms)
-        shots = play_chunk(io, segments, keyframes if observe == "keyframes" else 0)
-        total = sum(s.ms for s in segments)
-        items = [text_item(f"done: {len(steps)} steps, {total} ms ({intent})")]
-        for t, png in shots:
+        result = play_chunk(
+            io, segments, keyframes if observe == "keyframes" else 0, half=screen_half
+        )
+        if result.stopped is None:
+            summary = f"done: {len(steps)} steps, {result.elapsed_ms} ms ({intent})"
+        else:
+            i, cond = result.stopped
+            summary = (
+                f"stopped early: step {i} ({steps[i].get('skill')}) ended on `{cond}` after "
+                f"{result.elapsed_ms} ms; skipped {len(steps) - i - 1} later steps ({intent})"
+            )
+        items = [text_item(summary)]
+        for t, png in result.shots:
             items += [text_item(f"keyframe at {t} ms"), frame(png, f"keyframe {t}ms: {intent}")]
         if frame_after_action:
             items += [text_item("end of chunk"), frame(io.capture(), f"after: {intent}")]

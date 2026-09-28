@@ -9,7 +9,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    from PIL.Image import Image
 
 
 class Button(StrEnum):
@@ -53,6 +56,11 @@ class GameIO(Protocol):
 
     def capture(self) -> bytes:
         """Return the current frame as PNG bytes."""
+        ...
+
+    def snapshot(self, size: tuple[int, int]) -> Image:
+        """Return the current frame as a small grayscale image, fast enough to poll ~10 Hz.
+        Used by the chunk executor's `until` checks, never shown to the model."""
         ...
 
     def set_pad(self, state: PadState) -> None: ...

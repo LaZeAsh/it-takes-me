@@ -13,9 +13,10 @@ import io
 import time
 from typing import Any
 
+from PIL import Image
+
 from .io import NEUTRAL, Button, PadState
 
-# Buttons that are real digital buttons on an XInput pad. Triggers are analog and handled apart.
 _XUSB_NAMES: dict[Button, str] = {
     Button.A: "XUSB_GAMEPAD_A",
     Button.B: "XUSB_GAMEPAD_B",
@@ -54,14 +55,17 @@ class WindowsGameIO:
 
     # -- observation -------------------------------------------------------------------------
 
-    def capture(self) -> bytes:
-        from PIL import Image
-
+    def _grab(self) -> Image.Image:
         shot = self._sct.grab(self._monitor)
-        im = Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
+        return Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
+
+    def capture(self) -> bytes:
         buf = io.BytesIO()
-        im.save(buf, format="PNG")
+        self._grab().save(buf, format="PNG")
         return buf.getvalue()
+
+    def snapshot(self, size: tuple[int, int]) -> Image.Image:
+        return self._grab().convert("L").resize(size, Image.Resampling.BILINEAR, reducing_gap=2.0)
 
     # -- input ---------------------------------------------------------------------------------
 

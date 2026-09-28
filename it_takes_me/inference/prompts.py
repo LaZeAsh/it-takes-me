@@ -19,8 +19,9 @@ def developer_instructions(character: str, extra: list[str] | None = None) -> st
         "- Act with `act`: plan the next 0.5-3 seconds as a chunk of skills (run, jump, "
         "double_jump, dash, ...) and they execute with exact timing. Then look at the result "
         "and plan the next chunk. Short chunks when precision matters (ledges, puzzles), longer "
-        "ones for plain traversal. Ask for `observe: keyframes` when you need to see what went "
-        "wrong mid-chunk. Never assume a chunk succeeded without a frame confirming it.",
+        "ones for plain traversal; add `until: [stuck, cut]` to long runs so they stop on their "
+        "own. Ask for `observe: keyframes` when you need to see what went wrong mid-chunk. "
+        "Never assume a chunk succeeded without a frame confirming it.",
         "- Use `say` to coordinate with your partner: announce what you are about to do, ask "
         "them to do their part of a puzzle, or tell them when you are ready.",
         "",

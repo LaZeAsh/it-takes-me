@@ -72,6 +72,7 @@ def main() -> None:
         frame_after_action=settings.frame_after_action,
         keyframes=settings.keyframes,
         max_chunk_ms=settings.max_chunk_ms,
+        screen_half=settings.screen_half,
         on_frame=lambda png, reason: recorder.frame(png, reason=reason),
         on_say=lambda text: console.print(
             f"[bold magenta]{settings.character}:[/bold magenta] {text}"
