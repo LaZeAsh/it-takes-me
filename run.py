@@ -31,6 +31,8 @@ MONITOR = 1  # mss monitor index the game is on (1 = primary)
 MAX_TURNS: int | None = None
 MAX_TOOL_CALLS_PER_TURN = 40
 FRAME_AFTER_ACTION = True
+MAX_CHUNK_MS = 3000  # longest action chunk the model may plan in one `act` call
+KEYFRAMES = 2  # mid-chunk frames returned when the model asks for `observe: keyframes`
 COMPACT_AFTER_TOKENS = 600_000
 
 RUNS_DIR = Path("runs")
@@ -56,6 +58,8 @@ def main() -> None:
         max_tool_calls_per_turn=MAX_TOOL_CALLS_PER_TURN,
         max_turns=MAX_TURNS,
         frame_after_action=FRAME_AFTER_ACTION,
+        max_chunk_ms=MAX_CHUNK_MS,
+        keyframes=KEYFRAMES,
         compact_after_tokens=COMPACT_AFTER_TOKENS,
         extra_instructions=list(EXTRA_INSTRUCTIONS),
     )
@@ -66,6 +70,8 @@ def main() -> None:
     tools = build_game_tools(
         game,
         frame_after_action=settings.frame_after_action,
+        keyframes=settings.keyframes,
+        max_chunk_ms=settings.max_chunk_ms,
         on_frame=lambda png, reason: recorder.frame(png, reason=reason),
         on_say=lambda text: console.print(
             f"[bold magenta]{settings.character}:[/bold magenta] {text}"

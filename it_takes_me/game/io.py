@@ -7,6 +7,7 @@ PC, or something else later.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
 
@@ -30,32 +31,30 @@ class Button(StrEnum):
     RS = "RS"  # right-stick click
 
 
-class GameIO(Protocol):
-    """Capture the screen and inject controller input.
+@dataclass(frozen=True, slots=True)
+class PadState:
+    """Everything the pad is doing at one instant. Sticks are (x, y) in [-1, 1]; +x is right,
+    +y is forward/up on screen. Triggers count as pressed when in `buttons`."""
 
-    Stick axes are in [-1, 1]; +x is right, +y is forward/up on screen. Durations are ms.
-    Implementations should be quick: tool handlers run on the SDK's reader thread and block
-    event delivery while they execute.
+    left: tuple[float, float] = (0.0, 0.0)
+    right: tuple[float, float] = (0.0, 0.0)
+    buttons: frozenset[Button] = frozenset()
+
+
+NEUTRAL = PadState()
+
+
+class GameIO(Protocol):
+    """Capture the screen and drive the controller.
+
+    Input is a single primitive: `set_pad` replaces the whole pad state, which stays until the
+    next call. Timing (how long a state is held) is owned by the chunk executor, not here.
     """
 
     def capture(self) -> bytes:
         """Return the current frame as PNG bytes."""
         ...
 
-    def press(self, button: Button, hold_ms: int = 80) -> None: ...
-
-    def hold(self, button: Button) -> None: ...
-
-    def release(self, button: Button) -> None: ...
-
-    def move(self, x: float, y: float, ms: int) -> None:
-        """Push the left stick to (x, y) for `ms`, then recentre."""
-        ...
-
-    def camera(self, dx: float, dy: float, ms: int) -> None:
-        """Push the right stick to (dx, dy) for `ms`, then recentre."""
-        ...
-
-    def wait(self, ms: int) -> None: ...
+    def set_pad(self, state: PadState) -> None: ...
 
     def close(self) -> None: ...

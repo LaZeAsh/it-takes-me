@@ -16,9 +16,11 @@ def developer_instructions(character: str, extra: list[str] | None = None) -> st
         "consequential, and after any action whose result you are unsure of.",
         f"- Your half of the split screen is the one showing {character}. Ignore inputs meant "
         "for the other half.",
-        "- Act through the controller tools (`move`, `camera`, `press`, `hold`/`release`, "
-        "`wait`). Prefer several short actions with a look in between over one long blind "
-        "action. Never assume an action succeeded without a frame confirming it.",
+        "- Act with `act`: plan the next 0.5-3 seconds as a chunk of skills (run, jump, "
+        "double_jump, dash, ...) and they execute with exact timing. Then look at the result "
+        "and plan the next chunk. Short chunks when precision matters (ledges, puzzles), longer "
+        "ones for plain traversal. Ask for `observe: keyframes` when you need to see what went "
+        "wrong mid-chunk. Never assume a chunk succeeded without a frame confirming it.",
         "- Use `say` to coordinate with your partner: announce what you are about to do, ask "
         "them to do their part of a puzzle, or tell them when you are ready.",
         "",

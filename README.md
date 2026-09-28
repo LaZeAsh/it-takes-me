@@ -4,8 +4,10 @@ GPT-6 Astra plays one half of _It Takes Two_ while you play the other.
 
 The agent talks to the model through the **Codex app-server** using the official
 `openai-codex` Python SDK, so it runs on your ChatGPT/Codex subscription (no API key).
-Game actions are exposed to the model as dynamic tools (`look_at_screen`, `move`,
-`press`, ...) on one persistent thread.
+Game actions are exposed to the model as dynamic tools on one persistent thread. The model
+acts in **chunks**: one `act` call plans 0.5-3 s of play as a list of skills (`run`, `jump`,
+`double_jump`, `dash`, ...) or raw pad segments, which `it_takes_me/game/chunks.py` executes
+locally with exact timing before returning the resulting frame(s).
 
 ## Setup
 
@@ -26,5 +28,5 @@ uv run python run.py
 
 Every session is recorded to `runs/<timestamp>/` (frames + `events.jsonl`).
 
-The Windows backend captures the screen with `mss`; controller input (virtual Xbox pad) is
-not wired up yet.
+The Windows backend captures the screen with `mss` and drives a virtual Xbox pad with
+`vgamepad`.

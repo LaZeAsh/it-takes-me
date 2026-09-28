@@ -14,6 +14,14 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from it_takes_me.game.chunks import (
+    DIRECTIONS,
+    LOOK_DIRECTIONS,
+    MAX_CHUNK_MS,
+    SKILLS,
+    compile_chunk,
+    play_chunk,
+)
 from it_takes_me.game.io import Button, GameIO
 
 log = logging.getLogger(__name__)
@@ -116,66 +124,87 @@ class ToolRegistry:
 
 # --- It Takes Two action set --------------------------------------------------------------
 
-_AXIS = {"type": "number", "minimum": -1, "maximum": 1}
-_MS = {"type": "integer", "minimum": 0, "maximum": 2000}
 _BUTTON = {"type": "string", "enum": [b.value for b in Button]}
+_STEP_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "skill": {"type": "string", "enum": list(SKILLS)},
+        "dir": {"type": "string", "enum": list(DIRECTIONS)},
+        "ms": {"type": "integer", "minimum": 0, "maximum": MAX_CHUNK_MS},
+        "sprint": {"type": "boolean"},
+        "button": {"type": "string", "enum": ["LT", "RT"]},
+        "look": {"type": "string", "enum": list(LOOK_DIRECTIONS)},
+        "left": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
+        "right": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
+        "buttons": {"type": "array", "items": _BUTTON},
+    },
+    "required": ["skill"],
+    "additionalProperties": False,
+}
+
+_ACT_DESCRIPTION = """\
+Play a short chunk of input (up to {max_ms} ms total). Steps run back to back with exact \
+timing on the pad; the pad returns to neutral when the chunk ends. Plan the next 0.5-3 s, not \
+more: you will see the result and plan again.
+
+`dir` is relative to the camera: forward, back, left, right, forward-left, forward-right, \
+back-left, back-right, none. Every skill except wait/raw accepts `dir` (steer while doing it).
+
+Skills:
+- run {{dir, ms=500, sprint?}}: move with the left stick.
+- jump {{dir}}: one jump, including airtime.
+- double_jump {{dir}}: jump, then jump again in the air (longer/higher gaps).
+- dash {{dir}}: quick dash (works in the air too).
+- jump_dash {{dir}}: jump then dash in the air (long horizontal gaps).
+- ground_pound {{dir}}: slam down; use while airborne.
+- interact {{dir, ms=100}}: Y. Use a longer ms for hold-to-interact prompts.
+- grapple {{dir}}: RB, grapple to a rope point in range.
+- ability {{button: LT|RT, dir, ms=300}}: hold a chapter ability trigger.
+- look {{look: left|right|up|down, dir, ms=200}}: turn the camera.
+- wait {{ms=500}}: stand still.
+- raw {{ms, left: [x,y], right: [x,y], buttons: [...]}}: exact pad state for ms, for anything \
+the skills cannot express. Sticks in [-1, 1], +y is forward/up.
+
+`observe`: "end" (default) returns the frame after the chunk; "keyframes" also returns \
+{{n}} frames from during the chunk, to see why a jump or sequence went wrong."""
 
 
 def build_game_tools(
     io: GameIO,
     *,
     frame_after_action: bool = True,
+    keyframes: int = 2,
+    max_chunk_ms: int = MAX_CHUNK_MS,
     on_frame: Callable[[bytes, str], object] | None = None,
     on_say: Callable[[str], None] | None = None,
     max_calls_per_turn: int | None = None,
 ) -> ToolRegistry:
     reg = ToolRegistry(max_calls_per_turn=max_calls_per_turn)
 
-    def frame(reason: str) -> ContentItem:
-        png = io.capture()
+    def frame(png: bytes, reason: str) -> ContentItem:
         if on_frame is not None:
             on_frame(png, reason)
         return image_item(png)
 
-    def after(action: str) -> list[ContentItem]:
-        items = [text_item(f"done: {action}")]
-        if frame_after_action:
-            items.append(frame(f"after {action}"))
-        return items
-
     def look_at_screen(_: dict[str, Any]) -> list[ContentItem]:
-        return [text_item(f"frame captured at {time.strftime('%H:%M:%S')}"), frame("look")]
+        return [
+            text_item(f"frame captured at {time.strftime('%H:%M:%S')}"),
+            frame(io.capture(), "look"),
+        ]
 
-    def move(a: dict[str, Any]) -> list[ContentItem]:
-        x, y, ms = float(a.get("x", 0)), float(a.get("y", 0)), int(a.get("ms", 300))
-        io.move(x, y, ms)
-        return after(f"move({x:+.2f}, {y:+.2f}, {ms}ms)")
-
-    def camera(a: dict[str, Any]) -> list[ContentItem]:
-        dx, dy, ms = float(a.get("dx", 0)), float(a.get("dy", 0)), int(a.get("ms", 200))
-        io.camera(dx, dy, ms)
-        return after(f"camera({dx:+.2f}, {dy:+.2f}, {ms}ms)")
-
-    def press(a: dict[str, Any]) -> list[ContentItem]:
-        button = Button(a["button"])
-        hold_ms = int(a.get("hold_ms", 80))
-        io.press(button, hold_ms)
-        return after(f"press({button}, {hold_ms}ms)")
-
-    def hold(a: dict[str, Any]) -> list[ContentItem]:
-        button = Button(a["button"])
-        io.hold(button)
-        return after(f"hold({button})")
-
-    def release(a: dict[str, Any]) -> list[ContentItem]:
-        button = Button(a["button"])
-        io.release(button)
-        return after(f"release({button})")
-
-    def wait(a: dict[str, Any]) -> list[ContentItem]:
-        ms = min(int(a.get("ms", 500)), 2000)
-        io.wait(ms)
-        return after(f"wait({ms}ms)")
+    def act(a: dict[str, Any]) -> list[ContentItem]:
+        steps = a.get("steps") or []
+        intent = str(a.get("intent", "")).strip()
+        observe = a.get("observe", "end")
+        segments = compile_chunk(steps, max_chunk_ms)
+        shots = play_chunk(io, segments, keyframes if observe == "keyframes" else 0)
+        total = sum(s.ms for s in segments)
+        items = [text_item(f"done: {len(steps)} steps, {total} ms ({intent})")]
+        for t, png in shots:
+            items += [text_item(f"keyframe at {t} ms"), frame(png, f"keyframe {t}ms: {intent}")]
+        if frame_after_action:
+            items += [text_item("end of chunk"), frame(io.capture(), f"after: {intent}")]
+        return items
 
     def say(a: dict[str, Any]) -> list[ContentItem]:
         text = str(a.get("text", "")).strip()
@@ -191,70 +220,23 @@ def build_game_tools(
         look_at_screen,
     )
     reg.register(
-        "move",
-        "Push the LEFT stick to (x, y) for `ms` milliseconds, then recentre. x: -1 left … +1 "
-        "right. y: -1 back/down … +1 forward/up. Default ms=300.",
+        "act",
+        _ACT_DESCRIPTION.format(max_ms=max_chunk_ms, n=keyframes),
         {
             "type": "object",
-            "properties": {"x": _AXIS, "y": _AXIS, "ms": _MS},
-            "required": ["x", "y"],
+            "properties": {
+                "intent": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "What this chunk is meant to achieve, in a few words.",
+                },
+                "steps": {"type": "array", "items": _STEP_SCHEMA, "minItems": 1},
+                "observe": {"type": "string", "enum": ["end", "keyframes"]},
+            },
+            "required": ["intent", "steps"],
             "additionalProperties": False,
         },
-        move,
-    )
-    reg.register(
-        "camera",
-        "Push the RIGHT stick (camera) to (dx, dy) for `ms` milliseconds, then recentre. "
-        "dx: -1 look left … +1 look right. dy: -1 look down … +1 look up. Default ms=200.",
-        {
-            "type": "object",
-            "properties": {"dx": _AXIS, "dy": _AXIS, "ms": _MS},
-            "required": ["dx", "dy"],
-            "additionalProperties": False,
-        },
-        camera,
-    )
-    reg.register(
-        "press",
-        "Tap a controller button and release it after `hold_ms` (default 80). Xbox layout: "
-        "A jump, X dash/interact, B/Y ability (context-specific), RT/LT tools, LB/RB "
-        "grab/swap, START pause.",
-        {
-            "type": "object",
-            "properties": {"button": _BUTTON, "hold_ms": _MS},
-            "required": ["button"],
-            "additionalProperties": False,
-        },
-        press,
-    )
-    reg.register(
-        "hold",
-        "Hold a button down until you call `release`. Use for grabbing, charging, sustained "
-        "abilities.",
-        {
-            "type": "object",
-            "properties": {"button": _BUTTON},
-            "required": ["button"],
-            "additionalProperties": False,
-        },
-        hold,
-    )
-    reg.register(
-        "release",
-        "Release a button you are holding.",
-        {
-            "type": "object",
-            "properties": {"button": _BUTTON},
-            "required": ["button"],
-            "additionalProperties": False,
-        },
-        release,
-    )
-    reg.register(
-        "wait",
-        "Do nothing for up to 2000 ms (e.g. wait for your partner, a cutscene, or an animation).",
-        {"type": "object", "properties": {"ms": _MS}, "additionalProperties": False},
-        wait,
+        act,
     )
     reg.register(
         "say",
