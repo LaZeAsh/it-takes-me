@@ -27,7 +27,7 @@ _DECLINE = {"decision": "decline"}
 
 class CodexRuntime:
     def __init__(self, *, cwd: Path | None = None, tools: ToolRegistry | None = None) -> None:
-        self.tools = tools
+        self.tools = tools  # noqa: BLE001
         self._client = CodexClient(
             config=CodexConfig(cwd=str(cwd) if cwd else None),
             approval_handler=self._on_server_request,
