@@ -10,6 +10,7 @@ import logging
 from pathlib import Path
 
 from it_takes_me.config import Settings
+from it_takes_me.game.pad_gui import PadMixer, start_pad_window
 from it_takes_me.game.windows import WindowsGameIO
 from it_takes_me.inference.player import AstraPlayer
 from it_takes_me.inference.runtime import CodexRuntime
@@ -27,6 +28,7 @@ REASONING_EFFORT = "medium"
 CHARACTER = "May"
 
 MONITOR = 1  # mss monitor index the game is on (1 = primary)
+SHOW_PAD = True  # on-screen controller showing the agent's inputs; you can click it too
 
 MAX_TURNS: int | None = None
 MAX_TOOL_CALLS_PER_TURN = 40
@@ -64,7 +66,9 @@ def main() -> None:
         extra_instructions=list(EXTRA_INSTRUCTIONS),
     )
 
-    game = WindowsGameIO(monitor=MONITOR)
+    game = PadMixer(WindowsGameIO(monitor=MONITOR))
+    if SHOW_PAD:
+        start_pad_window(game, title=f"{CHARACTER} pad")
     recorder = RunRecorder(settings.runs_dir)
     console.print(f"recording to {recorder.dir}")
     tools = build_game_tools(
