@@ -32,14 +32,14 @@ packages = ["it_takes_me"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-src = ["it_takes_me", "run.py"]
+src = ["it_takes_me", "run.py", "pad.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.pyright]
 pythonVersion = "3.11"
-include = ["it_takes_me", "run.py"]
+include = ["it_takes_me", "run.py", "pad.py"]
 venvPath = "."
 venv = ".venv"
 typeCheckingMode = "standard"

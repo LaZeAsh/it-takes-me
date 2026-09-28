@@ -26,6 +26,10 @@ On the Windows gaming PC with the game on screen:
 uv run python run.py
 ```
 
+An on-screen controller (`SHOW_PAD` in `run.py`) shows what the agent is pressing, and you can
+click it to add your own input to the same pad. To drive the virtual pad yourself with no agent:
+`uv run python pad.py`.
+
 Every session is recorded to `runs/<timestamp>/` (frames + `events.jsonl`).
 
 The Windows backend captures the screen with `mss` and drives a virtual Xbox pad with
