@@ -86,12 +86,18 @@ class CodexRuntime:
         model: str,
         reasoning_effort: str,
         character: str,
+        compact_after_tokens: int,
         extra_instructions: list[str] | None = None,
         ephemeral: bool = False,
     ) -> Thread:
         payload: dict[str, Any] = {
             "model": model,
-            "config": {"model_reasoning_effort": reasoning_effort},
+            # The app-server compacts inline, inside the turn that crosses the limit. A manual
+            # `thread/compact/start` runs as its own background turn and races our next turn.
+            "config": {
+                "model_reasoning_effort": reasoning_effort,
+                "model_auto_compact_token_limit": compact_after_tokens,
+            },
             "developerInstructions": developer_instructions(character, extra_instructions),
             "sandbox": "read-only",
             "approvalPolicy": "never",
@@ -102,6 +108,3 @@ class CodexRuntime:
         started = self._client.thread_start(payload)
         log.info("thread %s started on model %s", started.thread.id, started.model)
         return Thread(self._client, started.thread.id)
-
-    def compact(self, thread_id: str) -> None:
-        self._client.thread_compact(thread_id)

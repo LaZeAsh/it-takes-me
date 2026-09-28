@@ -89,6 +89,7 @@ def main() -> None:
                 model=settings.model,
                 reasoning_effort=settings.reasoning_effort,
                 character=settings.character,
+                compact_after_tokens=settings.compact_after_tokens,
                 extra_instructions=settings.extra_instructions,
             )
             console.print(

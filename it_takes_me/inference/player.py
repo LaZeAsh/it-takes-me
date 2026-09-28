@@ -113,11 +113,6 @@ class AstraPlayer:
                 break
             turn_no += 1
             self._run_turn(turn_no)
-            if self._total_tokens >= self.settings.compact_after_tokens:
-                self.console.print("[dim]compacting thread context…[/dim]")
-                self.runtime.compact(self.thread.id)
-                self.recorder.event("compact", total_tokens=self._total_tokens)
-                self._total_tokens = 0
 
     def _turn_text(self, turn_no: int, hints: list[str]) -> str:
         parts = [
@@ -156,6 +151,8 @@ class AstraPlayer:
             kind = type(item).__name__
             if kind == "AgentMessageThreadItem":
                 self.console.print()
+            elif kind == "ContextCompactionThreadItem":
+                self.console.print("[dim]thread context compacted[/dim]")
             self.recorder.event(
                 "item", type=kind, item=_strip_data_urls(item.model_dump(mode="json"))
             )
