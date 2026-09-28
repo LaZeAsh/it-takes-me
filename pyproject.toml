@@ -1,0 +1,53 @@
+[project]
+name = "it-takes-me"
+version = "0.1.0"
+description = "GPT-6 Astra plays It Takes Two as your co-op partner, driven through the Codex app-server."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Ayush Garg" }]
+dependencies = [
+    "openai-codex==0.157.1",
+    "pydantic>=2.12",
+    "pillow>=11.0",
+    "mss>=10.0",
+    "rich>=13.0",
+    "vgamepad>=0.1.0; sys_platform == 'win32'",
+    "pydirectinput>=1.0.4; sys_platform == 'win32'",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8",
+    "pyright>=1.1.390",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["it_takes_me"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["it_takes_me", "run.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pyright]
+pythonVersion = "3.11"
+include = ["it_takes_me", "run.py"]
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "standard"
+
+# vgamepad ships only an sdist whose setup.py asserts on non-Windows, so uv cannot build its
+# metadata on macOS while resolving the cross-platform lockfile. Declare it statically instead.
+[[tool.uv.dependency-metadata]]
+name = "vgamepad"
+version = "0.1.0"
+requires-dist = []
+requires-python = ">=3.6"
