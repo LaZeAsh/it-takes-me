@@ -8,22 +8,24 @@ import sys
 import threading
 from typing import Any
 
-from openai_codex import LocalImageInput, TextInput
-from openai_codex.api import Thread, TurnHandle
-from openai_codex.generated.v2_all import (
-    AgentMessageDeltaNotification,
-    ErrorNotification,
-    ItemCompletedNotification,
-    ThreadTokenUsageUpdatedNotification,
-    TurnCompletedNotification,
-)
 from rich.console import Console
 
 from it_takes_me.config import Settings
 from it_takes_me.game.io import GameIO
-from it_takes_me.inference.runtime import CodexRuntime
+from it_takes_me.inference.session import (
+    ActiveTurn,
+    InferenceError,
+    InferenceEvent,
+    InferenceSession,
+    ItemCompleted,
+    Notification,
+    TextDelta,
+    TurnCompleted,
+    UsageUpdated,
+)
 from it_takes_me.inference.tools import ToolRegistry
 from it_takes_me.recording import RunRecorder
+from it_takes_me.vision import ModelFrameEncoder
 
 log = logging.getLogger(__name__)
 
@@ -42,28 +44,29 @@ def _strip_data_urls(value: Any) -> Any:
     return value
 
 
-class AstraPlayer:
+class GamePlayer:
     def __init__(
         self,
         *,
-        runtime: CodexRuntime,
-        thread: Thread,
+        session: InferenceSession,
         io: GameIO,
         tools: ToolRegistry,
         recorder: RunRecorder,
         settings: Settings,
+        frame_encoder: ModelFrameEncoder,
         console: Console | None = None,
     ) -> None:
-        self.runtime = runtime
-        self.thread = thread
+        self.session = session
         self.io = io
         self.tools = tools
         self.recorder = recorder
         self.settings = settings
+        self.frame_encoder = frame_encoder
         self.console = console or Console()
         self._hints: queue.Queue[str] = queue.Queue()
-        self._active: TurnHandle | None = None
-        self._total_tokens = 0
+        self._active: ActiveTurn | None = None
+        self._context_input_tokens = 0
+        self._cumulative_tokens: dict[str, int] = {}
         self._stop = threading.Event()
         self.tools.observers.append(self._on_tool)
 
@@ -113,11 +116,15 @@ class AstraPlayer:
                 break
             turn_no += 1
             self._run_turn(turn_no)
-            if self._total_tokens >= self.settings.compact_after_tokens:
+            if self._context_input_tokens >= self.settings.compact_after_input_tokens:
                 self.console.print("[dim]compacting thread context…[/dim]")
-                self.runtime.compact(self.thread.id)
-                self.recorder.event("compact", total_tokens=self._total_tokens)
-                self._total_tokens = 0
+                self.session.compact()
+                self.recorder.event(
+                    "compact",
+                    context_input_tokens=self._context_input_tokens,
+                    cumulative=self._cumulative_tokens,
+                )
+                self._context_input_tokens = 0
 
     def _turn_text(self, turn_no: int, hints: list[str]) -> str:
         parts = [
@@ -130,55 +137,69 @@ class AstraPlayer:
 
     def _run_turn(self, turn_no: int) -> None:
         png = self.io.capture()
-        frame_path = self.recorder.frame(png, reason=f"turn {turn_no} start")
+        reason = f"turn {turn_no} start"
+        self.recorder.frame(png, reason=reason)
+        model_frame = self.frame_encoder.encode(
+            png,
+            detail=self.settings.model_frame_detail,
+        )
+        frame_path = self.recorder.observation(
+            model_frame.data,
+            reason=reason,
+            media_type=model_frame.media_type,
+            width=model_frame.width,
+            height=model_frame.height,
+            detail=model_frame.detail,
+        )
         hints = self._drain_hints()
         self.tools.begin_turn()
         self.recorder.event("turn_start", turn=turn_no, hints=hints)
 
-        handle = self.thread.turn(
-            [TextInput(self._turn_text(turn_no, hints)), LocalImageInput(str(frame_path.resolve()))]
-        )
+        handle = self.session.turn(self._turn_text(turn_no, hints), frame_path)
         self._active = handle
         self.console.rule(f"turn {turn_no}")
         try:
             for event in handle.stream():
-                self._on_event(event.method, event.payload)
+                self._on_event(event)
         finally:
             self._active = None
 
     # -- events ---------------------------------------------------------------------------------
 
-    def _on_event(self, method: str, payload: Any) -> None:
-        if isinstance(payload, AgentMessageDeltaNotification):
-            self.console.print(payload.delta, end="", highlight=False)
-        elif isinstance(payload, ItemCompletedNotification):
-            item = payload.item.root if hasattr(payload.item, "root") else payload.item
-            kind = type(item).__name__
-            if kind == "AgentMessageThreadItem":
+    def _on_event(self, event: InferenceEvent) -> None:
+        if isinstance(event, TextDelta):
+            self.console.print(event.text, end="", highlight=False)
+        elif isinstance(event, ItemCompleted):
+            if event.kind == "AgentMessageThreadItem":
                 self.console.print()
+            self.recorder.event("item", type=event.kind, item=_strip_data_urls(event.item))
+        elif isinstance(event, UsageUpdated):
+            last = event.last.to_dict()
+            cumulative = event.cumulative.to_dict()
+            self._context_input_tokens = event.last.input_tokens
+            self._cumulative_tokens = cumulative
             self.recorder.event(
-                "item", type=kind, item=_strip_data_urls(item.model_dump(mode="json"))
+                "usage",
+                context_input_tokens=self._context_input_tokens,
+                last=last,
+                cumulative=cumulative,
+                # Retain the old flat field for existing run-analysis scripts.
+                total_tokens=cumulative["total_tokens"],
+                model_context_window=event.model_context_window,
             )
-        elif isinstance(payload, ThreadTokenUsageUpdatedNotification):
-            total = getattr(payload.token_usage, "total", None)
-            self._total_tokens = int(getattr(total, "total_tokens", self._total_tokens))
-            self.recorder.event("usage", total_tokens=self._total_tokens)
-        elif isinstance(payload, ErrorNotification):
-            self.console.print(f"[red]error:[/red] {payload.error.message}")
-            self.recorder.event(
-                "error", message=payload.error.message, will_retry=payload.will_retry
-            )
-        elif isinstance(payload, TurnCompletedNotification):
-            turn = payload.turn
-            self.console.print(f"[dim]turn {turn.status.value} in {turn.duration_ms} ms[/dim]")
+        elif isinstance(event, InferenceError):
+            self.console.print(f"[red]error:[/red] {event.message}")
+            self.recorder.event("error", message=event.message, will_retry=event.will_retry)
+        elif isinstance(event, TurnCompleted):
+            self.console.print(f"[dim]turn {event.status} in {event.duration_ms} ms[/dim]")
             self.recorder.event(
                 "turn_end",
-                status=turn.status.value,
-                duration_ms=turn.duration_ms,
-                error=turn.error.message if turn.error else None,
+                status=event.status,
+                duration_ms=event.duration_ms,
+                error=event.error,
             )
-        else:
-            self.recorder.event("notification", method=method)
+        elif isinstance(event, Notification):
+            self.recorder.event("notification", method=event.method)
 
     def _on_tool(
         self, name: str, args: dict[str, Any], response: dict[str, Any], duration_ms: float

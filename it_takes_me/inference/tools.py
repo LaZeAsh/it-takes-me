@@ -24,6 +24,7 @@ from it_takes_me.game.chunks import (
     play_chunk,
 )
 from it_takes_me.game.io import Button, GameIO
+from it_takes_me.vision import FrameDetail, ModelFrame, ModelFrameEncoder, ScreenHalf
 
 log = logging.getLogger(__name__)
 
@@ -35,9 +36,9 @@ def text_item(text: str) -> ContentItem:
     return {"type": "inputText", "text": text}
 
 
-def image_item(png: bytes) -> ContentItem:
-    b64 = base64.b64encode(png).decode("ascii")
-    return {"type": "inputImage", "imageUrl": f"data:image/png;base64,{b64}"}
+def image_item(frame: ModelFrame) -> ContentItem:
+    b64 = base64.b64encode(frame.data).decode("ascii")
+    return {"type": "inputImage", "imageUrl": f"data:{frame.media_type};base64,{b64}"}
 
 
 @dataclass(slots=True)
@@ -84,6 +85,19 @@ class ToolRegistry:
 
     def specs(self) -> list[dict[str, Any]]:
         return [spec.to_wire() for spec in self.tools.values()]
+
+    def responses_specs(self) -> list[dict[str, Any]]:
+        """Return the same registry in the Responses API function-tool shape."""
+        return [
+            {
+                "type": "function",
+                "name": spec.name,
+                "description": spec.description,
+                "parameters": spec.input_schema,
+                "strict": False,
+            }
+            for spec in self.tools.values()
+        ]
 
     def begin_turn(self) -> None:
         self.calls_this_turn = 0
@@ -184,22 +198,30 @@ def build_game_tools(
     frame_after_action: bool = True,
     keyframes: int = 2,
     max_chunk_ms: int = MAX_CHUNK_MS,
-    screen_half: str = "left",
+    screen_half: ScreenHalf = "left",
+    frame_encoder: ModelFrameEncoder | None = None,
     on_frame: Callable[[bytes, str], object] | None = None,
+    on_observation: Callable[[ModelFrame, str], object] | None = None,
     on_say: Callable[[str], None] | None = None,
     max_calls_per_turn: int | None = None,
+    instant_actions: bool = False,
 ) -> ToolRegistry:
     reg = ToolRegistry(max_calls_per_turn=max_calls_per_turn)
+    encoder = frame_encoder or ModelFrameEncoder(half=screen_half)
 
-    def frame(png: bytes, reason: str) -> ContentItem:
+    def frame(png: bytes, reason: str, detail: FrameDetail = "low") -> ContentItem:
         if on_frame is not None:
             on_frame(png, reason)
-        return image_item(png)
+        model_frame = encoder.encode(png, detail=detail)
+        if on_observation is not None:
+            on_observation(model_frame, reason)
+        return image_item(model_frame)
 
-    def look_at_screen(_: dict[str, Any]) -> list[ContentItem]:
+    def look_at_screen(a: dict[str, Any]) -> list[ContentItem]:
+        detail: FrameDetail = "high" if a.get("detail") == "high" else "low"
         return [
             text_item(f"frame captured at {time.strftime('%H:%M:%S')}"),
-            frame(io.capture(), "look"),
+            frame(io.capture(), f"look ({detail})", detail),
         ]
 
     def act(a: dict[str, Any]) -> list[ContentItem]:
@@ -208,7 +230,11 @@ def build_game_tools(
         observe = a.get("observe", "end")
         segments = compile_chunk(steps, max_chunk_ms)
         result = play_chunk(
-            io, segments, keyframes if observe == "keyframes" else 0, half=screen_half
+            io,
+            segments,
+            keyframes if observe == "keyframes" else 0,
+            half=screen_half,
+            instant=instant_actions,
         )
         if result.stopped is None:
             summary = f"done: {len(steps)} steps, {result.elapsed_ms} ms ({intent})"
@@ -233,9 +259,14 @@ def build_game_tools(
 
     reg.register(
         "look_at_screen",
-        "Capture the current game frame. Use this whenever you need to know what is happening "
-        "now; the frame you got at the start of the turn goes stale within a second.",
-        {"type": "object", "properties": {}, "additionalProperties": False},
+        "Capture a current game frame when the world may have changed without your input or the "
+        "last result is ambiguous. Use low detail for navigation and high only for small prompts, "
+        "text, or objects. Do not call this immediately after receiving a turn-start or act frame.",
+        {
+            "type": "object",
+            "properties": {"detail": {"type": "string", "enum": ["low", "high"]}},
+            "additionalProperties": False,
+        },
         look_at_screen,
     )
     reg.register(

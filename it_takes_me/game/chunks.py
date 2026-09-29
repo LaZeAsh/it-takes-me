@@ -228,7 +228,12 @@ class _Watcher:
 
 
 def play_chunk(
-    io: GameIO, segments: list[Segment], keyframes: int = 0, half: str = "left"
+    io: GameIO,
+    segments: list[Segment],
+    keyframes: int = 0,
+    half: str = "left",
+    *,
+    instant: bool = False,
 ) -> ChunkResult:
     """Execute segments against wall-clock deadlines. Returns `keyframes` evenly spaced
     mid-chunk frames as (ms since start, png), and which `until` check stopped the chunk, if
@@ -238,6 +243,14 @@ def play_chunk(
     past the end of the segment they fall in. Keyframe times are planned from the full-length
     chunk, so a chunk stopped early returns fewer of them.
     """
+    if instant:
+        try:
+            for segment in segments:
+                io.set_pad(segment.state)
+        finally:
+            io.set_pad(NEUTRAL)
+        return ChunkResult(elapsed_ms=0)
+
     total = sum(s.ms for s in segments)
     shot_times = [total * (i + 1) / (keyframes + 1) for i in range(keyframes)] if total else []
     result = ChunkResult(elapsed_ms=0)

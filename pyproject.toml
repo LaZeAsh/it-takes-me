@@ -7,6 +7,7 @@ requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Ayush Garg" }]
 dependencies = [
+    "openai>=2.0",
     "openai-codex==0.157.1",
     "pydantic>=2.12",
     "pillow>=11.0",
@@ -32,14 +33,14 @@ packages = ["it_takes_me"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-src = ["it_takes_me", "run.py", "pad.py"]
+src = ["it_takes_me", "run.py", "pad.py", "replay.py", "summarize.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.pyright]
 pythonVersion = "3.11"
-include = ["it_takes_me", "run.py", "pad.py"]
+include = ["it_takes_me", "run.py", "pad.py", "replay.py", "summarize.py"]
 venvPath = "."
 venv = ".venv"
 typeCheckingMode = "standard"

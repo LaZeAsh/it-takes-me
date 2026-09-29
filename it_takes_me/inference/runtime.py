@@ -11,18 +11,87 @@ and interrupting reuse the SDK code paths.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from openai_codex.api import Thread
+from openai_codex import LocalImageInput, TextInput
+from openai_codex.api import Thread, TurnHandle
 from openai_codex.client import CodexClient, CodexConfig
+from openai_codex.generated.v2_all import (
+    AgentMessageDeltaNotification,
+    ErrorNotification,
+    ItemCompletedNotification,
+    ThreadTokenUsageUpdatedNotification,
+    TurnCompletedNotification,
+)
 
 from it_takes_me.inference.prompts import developer_instructions
+from it_takes_me.inference.session import (
+    ActiveTurn,
+    InferenceError,
+    InferenceEvent,
+    ItemCompleted,
+    Notification,
+    TextDelta,
+    TurnCompleted,
+    UsageBreakdown,
+    UsageUpdated,
+)
 from it_takes_me.inference.tools import ToolRegistry
 
 log = logging.getLogger(__name__)
 
 _DECLINE = {"decision": "decline"}
+
+
+class CodexTurn(ActiveTurn):
+    def __init__(self, handle: TurnHandle) -> None:
+        self._handle = handle
+
+    def steer(self, text: str) -> None:
+        self._handle.steer(text)
+
+    def stream(self) -> Iterator[InferenceEvent]:
+        for event in self._handle.stream():
+            payload = event.payload
+            if isinstance(payload, AgentMessageDeltaNotification):
+                yield TextDelta(payload.delta)
+            elif isinstance(payload, ItemCompletedNotification):
+                item = payload.item.root if hasattr(payload.item, "root") else payload.item
+                yield ItemCompleted(type(item).__name__, item.model_dump(mode="json"))
+            elif isinstance(payload, ThreadTokenUsageUpdatedNotification):
+                yield UsageUpdated(
+                    last=UsageBreakdown.from_object(payload.token_usage.last),
+                    cumulative=UsageBreakdown.from_object(payload.token_usage.total),
+                    model_context_window=payload.token_usage.model_context_window,
+                )
+            elif isinstance(payload, ErrorNotification):
+                yield InferenceError(payload.error.message, payload.will_retry)
+            elif isinstance(payload, TurnCompletedNotification):
+                turn = payload.turn
+                yield TurnCompleted(
+                    status=turn.status.value,
+                    duration_ms=turn.duration_ms,
+                    error=turn.error.message if turn.error else None,
+                )
+            else:
+                yield Notification(event.method)
+
+
+class CodexSession:
+    def __init__(self, runtime: CodexRuntime, thread: Thread, model: str) -> None:
+        self._runtime = runtime
+        self._thread = thread
+        self.id = thread.id
+        self.model = model
+
+    def turn(self, text: str, image_path: Path) -> ActiveTurn:
+        handle = self._thread.turn([TextInput(text), LocalImageInput(str(image_path.resolve()))])
+        return CodexTurn(handle)
+
+    def compact(self) -> None:
+        self._runtime.compact(self.id)
 
 
 class CodexRuntime:
@@ -80,15 +149,15 @@ class CodexRuntime:
 
     # -- threads -----------------------------------------------------------------------------
 
-    def start_thread(
+    def _thread_payload(
         self,
         *,
         model: str,
         reasoning_effort: str,
         character: str,
-        extra_instructions: list[str] | None = None,
-        ephemeral: bool = False,
-    ) -> Thread:
+        extra_instructions: list[str] | None,
+        ephemeral: bool,
+    ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "model": model,
             "config": {"model_reasoning_effort": reasoning_effort},
@@ -99,9 +168,51 @@ class CodexRuntime:
         }
         if self.tools is not None:
             payload["dynamicTools"] = self.tools.specs()
+        return payload
+
+    def start_thread(
+        self,
+        *,
+        model: str,
+        reasoning_effort: str,
+        character: str,
+        extra_instructions: list[str] | None = None,
+        ephemeral: bool = False,
+    ) -> Thread:
+        payload = self._thread_payload(
+            model=model,
+            reasoning_effort=reasoning_effort,
+            character=character,
+            extra_instructions=extra_instructions,
+            ephemeral=ephemeral,
+        )
         started = self._client.thread_start(payload)
         log.info("thread %s started on model %s", started.thread.id, started.model)
         return Thread(self._client, started.thread.id)
+
+    def start_session(
+        self,
+        *,
+        model: str,
+        reasoning_effort: str,
+        character: str,
+        extra_instructions: list[str] | None = None,
+        ephemeral: bool = False,
+    ) -> CodexSession:
+        payload = self._thread_payload(
+            model=model,
+            reasoning_effort=reasoning_effort,
+            character=character,
+            extra_instructions=extra_instructions,
+            ephemeral=ephemeral,
+        )
+        started = self._client.thread_start(payload)
+        log.info("thread %s started on model %s", started.thread.id, started.model)
+        return CodexSession(
+            self,
+            Thread(self._client, started.thread.id),
+            started.model or model,
+        )
 
     def compact(self, thread_id: str) -> None:
         self._client.thread_compact(thread_id)
