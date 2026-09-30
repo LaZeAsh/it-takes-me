@@ -20,7 +20,7 @@ processed observation to Codex without changing controller capture or full-frame
 Status: complete.
 
 - Record last-request and cumulative input, cached input, output, and reasoning tokens.
-- Trigger Codex compaction from the last request's input size instead of cumulative usage.
+- Configure Codex automatic compaction with an input-context threshold instead of cumulative usage.
 - Use Responses server-side compaction for the API runtime.
 
 Acceptance: cumulative usage cannot cause compaction on every later turn, and logs contain enough

@@ -68,7 +68,11 @@ def play_session(
         instant_actions=instant_actions,
     )
     if settings.runtime == "codex":
-        runtime = CodexRuntime(cwd=settings.cwd, tools=tools)
+        runtime = CodexRuntime(
+            cwd=settings.cwd,
+            tools=tools,
+            compact_threshold=settings.compact_after_input_tokens,
+        )
     elif settings.runtime == "responses":
         runtime = ResponsesRuntime(
             tools=tools,

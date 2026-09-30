@@ -32,8 +32,8 @@ class Settings:
     # Action chunks: longest chunk the model may plan, and mid-chunk frames on `observe: keyframes`.
     max_chunk_ms: int = 3000
     keyframes: int = 2
-    # Compact when the latest request's rendered input passes this threshold. This is context
-    # pressure, unlike cumulative thread usage, which only grows over a session.
+    # Both runtimes compact automatically when rendered input context passes this threshold,
+    # rather than using cumulative session usage, which only grows over a session.
     compact_after_input_tokens: int = 200_000
     max_output_tokens: int = 4000
     api_store: bool = True

@@ -80,8 +80,7 @@ class CodexTurn(ActiveTurn):
 
 
 class CodexSession:
-    def __init__(self, runtime: CodexRuntime, thread: Thread, model: str) -> None:
-        self._runtime = runtime
+    def __init__(self, thread: Thread, model: str) -> None:
         self._thread = thread
         self.id = thread.id
         self.model = model
@@ -90,13 +89,17 @@ class CodexSession:
         handle = self._thread.turn([TextInput(text), LocalImageInput(str(image_path.resolve()))])
         return CodexTurn(handle)
 
-    def compact(self) -> None:
-        self._runtime.compact(self.id)
-
 
 class CodexRuntime:
-    def __init__(self, *, cwd: Path | None = None, tools: ToolRegistry | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        cwd: Path | None = None,
+        tools: ToolRegistry | None = None,
+        compact_threshold: int = 200_000,
+    ) -> None:
         self.tools = tools  # noqa: BLE001
+        self._compact_threshold = compact_threshold
         self._client = CodexClient(
             config=CodexConfig(cwd=str(cwd) if cwd else None),
             approval_handler=self._on_server_request,
@@ -160,7 +163,11 @@ class CodexRuntime:
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "model": model,
-            "config": {"model_reasoning_effort": reasoning_effort},
+            # Compact inline; a manual compaction starts a background turn that can race play.
+            "config": {
+                "model_reasoning_effort": reasoning_effort,
+                "model_auto_compact_token_limit": self._compact_threshold,
+            },
             "developerInstructions": developer_instructions(character, extra_instructions),
             "sandbox": "read-only",
             "approvalPolicy": "never",
@@ -209,10 +216,6 @@ class CodexRuntime:
         started = self._client.thread_start(payload)
         log.info("thread %s started on model %s", started.thread.id, started.model)
         return CodexSession(
-            self,
             Thread(self._client, started.thread.id),
             started.model or model,
         )
-
-    def compact(self, thread_id: str) -> None:
-        self._client.thread_compact(thread_id)

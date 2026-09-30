@@ -199,11 +199,6 @@ class ResponsesSession:
         self.id = response.id
         return response
 
-    def compact(self) -> None:
-        # Every request enables Responses server-side compaction. Calling a second standalone
-        # compaction pass here would duplicate work.
-        return
-
 
 class ResponsesRuntime:
     def __init__(
