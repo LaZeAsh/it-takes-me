@@ -191,6 +191,8 @@ class GamePlayer:
                 duration_ms=event.duration_ms,
                 error=event.error,
             )
+            if event.status == "failed":
+                self._stop.set()
         elif isinstance(event, Notification):
             self.recorder.event("notification", method=event.method)
 

@@ -36,6 +36,7 @@ CANCEL = Button.B
 GROUND_POUND = Button.B
 SPRINT = Button.LS
 GRAPPLE = Button.RB
+LOCATE_PARTNER = Button.RS
 
 # --- Skill timings (ms) -----------------------------------------------------------------------
 
@@ -45,6 +46,7 @@ DOUBLE_JUMP_GAP_MS = 250  # delay between the two jump presses
 DASH_AFTER_MS = 250
 GROUND_POUND_AFTER_MS = 500
 GRAPPLE_AFTER_MS = 600
+LOCATE_PARTNER_AFTER_MS = 200  # allow the partner indicator to appear before observing
 
 MAX_CHUNK_MS = 3000
 
@@ -91,6 +93,7 @@ SKILLS = (
     "grapple",
     "ability",
     "look",
+    "locate_partner",
     "wait",
     "raw",
 )
@@ -176,6 +179,8 @@ def compile_step(step: dict[str, Any]) -> list[Segment]:
         if word not in LOOK_DIRECTIONS:
             raise ValueError(f"unknown look direction {word!r}; use one of {list(LOOK_DIRECTIONS)}")
         return [Segment(_ms(step, 200), PadState(left=left, right=LOOK_DIRECTIONS[word]))]
+    if skill == "locate_partner":
+        return press(LOCATE_PARTNER, LOCATE_PARTNER_AFTER_MS)
     if skill == "wait":
         return [Segment(_ms(step, 500), NEUTRAL, _until(step, ("cut",)))]
     if skill == "raw":

@@ -11,6 +11,9 @@ acts in **chunks**: one `act` call plans 0.5-3 s of play as a list of skills (`r
 `double_jump`, `dash`, ...) or raw pad segments, which `it_takes_me/game/chunks.py` executes
 locally with exact timing before returning the resulting frame(s).
 
+When the model loses track of its partner, it can use `locate_partner` in an action chunk to
+click the right stick and reveal the partner's location, then plan its route from the returned frame.
+
 ## Setup
 
 ```bash
@@ -18,6 +21,9 @@ uv sync
 ```
 
 Uses your existing Codex login (`~/.codex/auth.json`).
+
+The Python SDK installs the bundled Codex runtime used by this project. Run `uv sync` after
+dependency updates; updating a separately installed global Codex CLI does not update this runtime.
 
 ## Run
 

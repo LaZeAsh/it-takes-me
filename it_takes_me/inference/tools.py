@@ -177,6 +177,8 @@ Skills:
 - grapple {{dir}}: RB, grapple to a rope point in range.
 - ability {{button: LT|RT, dir, ms=300}}: hold a chapter ability trigger.
 - look {{look: left|right|up|down, dir, ms=200}}: turn the camera.
+- locate_partner {{dir}}: click the right stick (RS) to reveal your partner's location. \
+Use this alone when you lose track of your partner; inspect the returned frame before moving.
 - wait {{ms=500, until?}}: stand still.
 - raw {{ms, left: [x,y], right: [x,y], buttons: [...]}}: exact pad state for ms, for anything \
 the skills cannot express. Sticks in [-1, 1], +y is forward/up.

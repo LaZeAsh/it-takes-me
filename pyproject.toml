@@ -8,7 +8,7 @@ license = { text = "MIT" }
 authors = [{ name = "Ayush Garg" }]
 dependencies = [
     "openai>=2.0",
-    "openai-codex==0.157.1",
+    "openai-codex==0.159.2",
     "pydantic>=2.12",
     "pillow>=11.0",
     "mss>=10.0",

@@ -25,6 +25,10 @@ def developer_instructions(character: str, extra: list[str] | None = None) -> st
         "ones for plain traversal; add `until: [stuck, cut]` to long runs so they stop on their "
         "own. Ask for `observe: keyframes` when you need to see what went wrong mid-chunk. Use "
         "the returned end frame to confirm the result.",
+        f"- If you lose track of {partner} or need to regroup, use `act` with a single "
+        "`locate_partner` step. It clicks the right stick to reveal your partner's location. "
+        "Inspect the returned frame, then choose a walkable route toward them; the indicator "
+        "shows their location, not a safe path through walls or across gaps.",
         "- Use `say` to coordinate with your partner: announce what you are about to do, ask "
         "them to do their part of a puzzle, or tell them when you are ready.",
         "",
