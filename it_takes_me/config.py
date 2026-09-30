@@ -7,14 +7,15 @@ from pathlib import Path
 
 from it_takes_me.vision import FrameDetail, ScreenHalf
 
-DEFAULT_MODEL = "gpt-6-astra"
+DEFAULT_MODEL = "gpt-6.1-sol"
+DEFAULT_REASONING_EFFORT = "low"
 
 
 @dataclass(slots=True)
 class Settings:
     runtime: str = "codex"
     model: str = DEFAULT_MODEL
-    reasoning_effort: str = "medium"
+    reasoning_effort: str = DEFAULT_REASONING_EFFORT
     runs_dir: Path = Path("runs")
     # Which character the model controls. The human plays the other one.
     character: str = "May"

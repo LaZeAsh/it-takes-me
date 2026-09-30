@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 
 from it_takes_me.app import play_session
-from it_takes_me.config import Settings
+from it_takes_me.config import DEFAULT_MODEL, DEFAULT_REASONING_EFFORT, Settings
 from it_takes_me.game.replay import ReplayGameIO
 from rich.console import Console
 from rich.logging import RichHandler
@@ -17,8 +17,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("run", type=Path, help="recorded run directory containing frames/")
     parser.add_argument("--runtime", choices=("codex", "responses"), default="codex")
-    parser.add_argument("--model", default="gpt-6-astra")
-    parser.add_argument("--effort", default="low")
+    parser.add_argument("--model", default=DEFAULT_MODEL)
+    parser.add_argument("--effort", default=DEFAULT_REASONING_EFFORT)
     parser.add_argument("--character", choices=("May", "Cody"), default="May")
     parser.add_argument("--turns", type=int, default=2)
     return parser.parse_args()

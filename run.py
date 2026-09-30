@@ -1,4 +1,4 @@
-"""Run GPT-6 Astra as your It Takes Two co-op partner.
+"""Run GPT-6.1 Sol as your It Takes Two co-op partner.
 
 Edit the hyperparameters below and run:  uv run python run.py
 Type on the terminal to talk to the model while it plays; `/quit` stops after the current turn.
@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 
 from it_takes_me.app import play_session
-from it_takes_me.config import Settings
+from it_takes_me.config import DEFAULT_MODEL, DEFAULT_REASONING_EFFORT, Settings
 from it_takes_me.game.io import GameIO
 from it_takes_me.game.pad_gui import PadMixer, start_pad_window
 from it_takes_me.game.pad_host import RemotePadIO, connect_pad
@@ -24,8 +24,8 @@ from rich.logging import RichHandler
 # ----------------------------------------------------------------------------------------------
 
 RUNTIME = "codex"  # "codex" uses your subscription; "responses" uses OPENAI_API_KEY
-MODEL = "gpt-6-astra"
-REASONING_EFFORT = "medium"
+MODEL = DEFAULT_MODEL
+REASONING_EFFORT = DEFAULT_REASONING_EFFORT
 CHARACTER = "May"
 
 MONITOR = 1  # mss monitor index the game is on (1 = primary)

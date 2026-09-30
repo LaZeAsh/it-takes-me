@@ -1,7 +1,7 @@
 [project]
 name = "it-takes-me"
 version = "0.1.0"
-description = "GPT-6 Astra plays It Takes Two as your co-op partner, driven through the Codex app-server."
+description = "GPT-6.1 Sol plays It Takes Two as your co-op partner, driven through the Codex app-server."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

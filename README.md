@@ -1,6 +1,7 @@
 # it-takes-me
 
-GPT-6 Astra plays one half of _It Takes Two_ while you play the other.
+GPT-6.1 Sol plays one half of _It Takes Two_ while you play the other, using low reasoning effort
+by default.
 
 The default harness talks to the model through the **Codex app-server** using the official
 `openai-codex` Python SDK, so it runs on your ChatGPT/Codex subscription (no API key). An optional
@@ -65,8 +66,8 @@ Run recorded frames through either harness without starting the game or waiting 
 timings:
 
 ```bash
-uv run python replay.py runs/20260927-232307 --runtime codex --model gpt-6-astra --turns 2
-uv run python replay.py runs/20260927-232307 --runtime responses --model gpt-6-sol --turns 2
+uv run python replay.py runs/20260927-232307 --runtime codex --turns 2
+uv run python replay.py runs/20260927-232307 --runtime responses --turns 2
 ```
 
 Compare existing or replay runs:
