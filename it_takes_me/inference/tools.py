@@ -16,11 +16,13 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from it_takes_me.game.chunks import (
+    CARRY_MAX_MS,
     CONDITIONS,
     DIRECTIONS,
     LOOK_DIRECTIONS,
     MAX_CHUNK_MS,
     SKILLS,
+    Carry,
     compile_chunk,
     play_chunk,
 )
@@ -68,6 +70,13 @@ class ToolRegistry:
     # Per-turn budget. `None` disables it. Reset with `begin_turn()`.
     max_calls_per_turn: int | None = None
     calls_this_turn: int = 0
+    # The one task the model has committed to via `act`; it must close it before switching.
+    current_task: str | None = None
+    # Called before anything else touches the game (tool calls, turn-start captures). Each
+    # returns an optional note for the model, e.g. how far a `keep_moving` run carried on.
+    settle_hooks: list[Callable[[], str | None]] = field(default_factory=list)
+    # True while the newest frame the model has is a high-detail look with no action since.
+    fresh_high_frame: bool = False
     # Observers get (tool, arguments, response_dict, duration_ms) after every dispatch.
     observers: list[Callable[[str, dict[str, Any], dict[str, Any], float], None]] = field(
         default_factory=list
@@ -102,6 +111,12 @@ class ToolRegistry:
 
     def begin_turn(self) -> None:
         self.calls_this_turn = 0
+        self.fresh_high_frame = False
+
+    def settle(self) -> str | None:
+        """Stop anything running in the background; return notes for the model, if any."""
+        notes = [note for hook in self.settle_hooks if (note := hook())]
+        return " ".join(notes) or None
 
     def dispatch(self, name: str, arguments: Any) -> dict[str, Any]:
         """Run a tool and shape the result as a `DynamicToolCallResponse`.
@@ -174,12 +189,18 @@ _STEP_SCHEMA: dict[str, Any] = {
 }
 
 _ACT_DESCRIPTION = """\
-Play a short chunk of input (up to {max_ms} ms total). Steps run back to back with exact \
-timing on the pad; the pad returns to neutral when the chunk ends. Choose durations based on \
-distance and uncertainty: 100-500 ms for precise corrections, 1-3 s to explore, and longer \
-runs for a clearly visible unobstructed route, within the total limit. Avoid repeated short \
-runs on a clear route: each new decision adds model latency. Shorten runs near a destination \
-or hazard; the local checks cannot detect arrival or reliably prevent falls.
+Play a chunk of input (up to {max_ms} ms total). Steps run back to back with exact timing on \
+the pad; the pad returns to neutral when the chunk ends unless `keep_moving` is set. Every \
+call costs several seconds of planning during which you stand still, so put everything you \
+can already see into one chunk: run to the object, jump onto it, run to the circle, interact. \
+Aim for 4-8 s per chunk when travelling. Use short chunks (under 2 s) only for precise jumps \
+near edges or lining up with an object; the local checks cannot detect arrival or reliably \
+prevent falls.
+`keep_moving: true` (last step must be a run with a direction): after the chunk, keep \
+running the same way while you plan the next one, until your next tool call, a stuck view, \
+a scene cut, or {carry_s} s. The returned frame is from the end of the chunk, so you will be \
+further along than it shows; the next result says how long you kept moving. Use it on clear \
+ground heading toward your target, never toward an edge or right up to the target.
 
 Every skill accepts `ms`, its TOTAL duration. Button skills also accept `hold_ms`: the button \
 is held at the start, then released while movement continues for the remaining ms. Defaults \
@@ -254,24 +275,79 @@ def build_game_tools(
             on_observation(model_frame, reason)
         return image_item(model_frame)
 
+    carry: Carry | None = None
+
+    def settle() -> str | None:
+        nonlocal carry
+        if carry is None:
+            return None
+        ms, reason = carry.stop()
+        carry = None
+        note = f"You kept moving for {ms} ms after your last chunk (ended: {reason})."
+        if reason == "cut":
+            reg.current_task = None
+            note += " The scene changed, so your task is cleared: define it again."
+        return note
+
+    def notes(note: str | None) -> list[ContentItem]:
+        return [text_item(note)] if note else []
+
     def look_at_screen(a: dict[str, Any]) -> list[ContentItem]:
-        detail: FrameDetail = "high" if a.get("detail") == "high" else "low"
+        del a
+        note = settle()
+        if reg.fresh_high_frame:
+            raise ValueError(
+                "You already have a high-detail frame and nothing has happened since. Act on "
+                "it; `act` returns a new frame (use a short `wait` step to watch the world)."
+            )
+        reg.fresh_high_frame = True
         return [
-            text_item(f"frame captured at {time.strftime('%H:%M:%S')}"),
-            frame(io.capture(), f"look ({detail})", detail),
+            *notes(note),
+            text_item(f"high-detail frame captured at {time.strftime('%H:%M:%S')}"),
+            frame(io.capture(), "look (high)", "high"),
         ]
 
+    def commit_task(a: dict[str, Any]) -> str:
+        """Validate the task switch before anything is pressed; return a status line."""
+        task = " ".join(str(a.get("task", "")).split())
+        if not task:
+            raise ValueError("`task` is required: the one task you are working on.")
+        current = reg.current_task
+        if current is None:
+            reg.current_task = task
+            return f"task: {task}"
+        if task.casefold() == current.casefold():
+            return f"task: {current}"
+        outcome = a.get("previous_task")
+        if outcome not in ("done", "blocked"):
+            raise ValueError(
+                f"Your current task is still {current!r}. Finish it first: repeat that exact "
+                "`task` and keep working on it. Only if the frame shows it is complete, or it "
+                'is impossible right now, switch tasks and set `previous_task` to "done" or '
+                '"blocked". Nothing was pressed.'
+            )
+        reg.current_task = task
+        return f"task {current!r} {outcome}; new task: {task}"
+
     def act(a: dict[str, Any]) -> list[ContentItem]:
+        nonlocal carry
+        note = settle()
         steps = a.get("steps") or []
         intent = str(a.get("intent", "")).strip()
         observe = a.get("observe", "end")
         segments = compile_chunk(steps, max_chunk_ms)
+        keep_moving = a.get("keep_moving") is True
+        if keep_moving and (steps[-1].get("skill") != "run" or segments[-1].state.left == (0, 0)):
+            raise ValueError("keep_moving needs the last step to be a run with a direction")
+        task_line = commit_task(a)
+        reg.fresh_high_frame = False
         result = play_chunk(
             io,
             segments,
             keyframes if observe == "keyframes" else 0,
             half=screen_half,
             instant=instant_actions,
+            hold_last=keep_moving,
         )
         if result.stopped is None:
             summary = f"done: {len(steps)} steps, {result.elapsed_ms} ms ({intent})"
@@ -281,11 +357,18 @@ def build_game_tools(
                 f"stopped early: step {i} ({steps[i].get('skill')}) ended on `{cond}` after "
                 f"{result.elapsed_ms} ms; skipped {len(steps) - i - 1} later steps ({intent})"
             )
-        items = [text_item(summary)]
+        if result.stopped is not None and result.stopped[1] == "cut":
+            # A respawn, checkpoint reload, or cutscene can change what needs doing.
+            reg.current_task = None
+            task_line = "task cleared: the scene changed. Define your task again from this frame."
+        items = [*notes(note), text_item(summary), text_item(task_line)]
         for t, png in result.shots:
             items += [text_item(f"keyframe at {t} ms"), frame(png, f"keyframe {t}ms: {intent}")]
         if frame_after_action:
             items += [text_item("end of chunk"), frame(io.capture(), f"after: {intent}")]
+        if keep_moving and result.stopped is None and not instant_actions:
+            carry = Carry(io, segments[-1].state, screen_half)
+            items.append(text_item("still running: you keep moving while you plan."))
         return items
 
     def say(a: dict[str, Any]) -> list[ContentItem]:
@@ -296,31 +379,45 @@ def build_game_tools(
 
     reg.register(
         "look_at_screen",
-        "Capture a current game frame when the world may have changed without your input or the "
-        "last result is ambiguous. Use low detail for navigation and high only for small prompts, "
-        "text, or objects. Do not call this immediately after receiving a turn-start or act frame.",
-        {
-            "type": "object",
-            "properties": {"detail": {"type": "string", "enum": ["low", "high"]}},
-            "additionalProperties": False,
-        },
+        "Capture a high-detail frame of your half to read small prompts, icons, or text that "
+        "are unclear in your latest frame. Not for navigation: every turn and every `act` "
+        "already returns a fresh frame. At most once between actions.",
+        {"type": "object", "properties": {}, "additionalProperties": False},
         look_at_screen,
     )
+    reg.settle_hooks.append(settle)
     reg.register(
         "act",
-        _ACT_DESCRIPTION.format(max_ms=max_chunk_ms, n=keyframes),
+        _ACT_DESCRIPTION.format(max_ms=max_chunk_ms, n=keyframes, carry_s=CARRY_MAX_MS // 1000),
         {
             "type": "object",
             "properties": {
+                "task": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": 'The one task you are committed to, e.g. "pull the lever '
+                    'with Cody". Repeat it exactly on every call until the frame shows it is '
+                    "complete; only then name a new one (with `previous_task`).",
+                },
+                "previous_task": {
+                    "type": "string",
+                    "enum": ["done", "blocked"],
+                    "description": "Only when `task` changes: whether the previous task is "
+                    "complete or impossible right now.",
+                },
                 "intent": {
                     "type": "string",
                     "maxLength": 200,
-                    "description": "What this chunk is meant to achieve, in a few words.",
+                    "description": "What this chunk does toward the task, in a few words.",
                 },
                 "steps": {"type": "array", "items": step_schema, "minItems": 1},
                 "observe": {"type": "string", "enum": ["end", "keyframes"]},
+                "keep_moving": {
+                    "type": "boolean",
+                    "description": "Keep the final run going while you plan the next chunk.",
+                },
             },
-            "required": ["intent", "steps"],
+            "required": ["task", "intent", "steps"],
             "additionalProperties": False,
         },
         act,

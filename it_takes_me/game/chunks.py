@@ -16,6 +16,7 @@ automatically. They detect a frozen view or abrupt change, not arrival or every 
 from __future__ import annotations
 
 import math
+import threading
 import time
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
@@ -52,6 +53,7 @@ SKIP_CUTSCENE_MS = 2000  # default hold; the model can choose a longer duration
 
 MAX_CHUNK_MS = 10_000
 AUTO_WATCH_RUN_MS = 3000
+CARRY_MAX_MS = 6000  # longest a final run keeps going while the model plans the next chunk
 
 # --- `until` checks ---------------------------------------------------------------------------
 # Diffs are mean absolute grayscale difference (0-255) between consecutive snapshots of our half
@@ -302,10 +304,12 @@ def play_chunk(
     half: str = "left",
     *,
     instant: bool = False,
+    hold_last: bool = False,
 ) -> ChunkResult:
     """Execute segments against wall-clock deadlines. Returns `keyframes` evenly spaced
     mid-chunk frames as (ms since start, png), and which `until` check stopped the chunk, if
-    any. The pad is neutral when this returns.
+    any. The pad is neutral when this returns, except with `hold_last` on a chunk that ran to
+    completion: then the last segment's state stays held for a `Carry` to take over.
 
     Captures happen while the current pad state is held, so they only skew timing if they run
     past the end of the segment they fall in. Keyframe times are planned from the full-length
@@ -328,6 +332,7 @@ def play_chunk(
         return (time.monotonic() - start) * 1000
 
     deadline = 0.0
+    completed = False
     try:
         for seg in segments:
             io.set_pad(seg.state)
@@ -348,7 +353,52 @@ def play_chunk(
                     if fired:
                         result.stopped = (seg.step, fired)
                         return result
+        completed = True
     finally:
-        io.set_pad(NEUTRAL)
+        if not (hold_last and completed):
+            io.set_pad(NEUTRAL)
         result.elapsed_ms = round(elapsed_ms())
     return result
+
+
+class Carry:
+    """Keeps a run going after its chunk ends, so the character moves while the model plans.
+
+    A background thread holds `state` and stops on the same stuck/cut checks as long runs, or
+    after `max_ms`. Nothing else may use `io` until `stop()` returns; the pad is neutral then.
+    """
+
+    def __init__(
+        self, io: GameIO, state: PadState, half: str = "left", max_ms: int = CARRY_MAX_MS
+    ) -> None:
+        self.io, self.half, self.max_ms = io, half, max_ms
+        self.reason: str | None = None
+        self.elapsed_ms = 0
+        self._halt = threading.Event()
+        self._start = time.monotonic()
+        io.set_pad(state)
+        self._thread = threading.Thread(target=self._run, daemon=True, name="carry")
+        self._thread.start()
+
+    def _run(self) -> None:
+        try:
+            watcher = _Watcher(self.io, frozenset(CONDITIONS), self.half, 0.0)
+            while not self._halt.wait(CHECK_EVERY_MS / 1000):
+                now = (time.monotonic() - self._start) * 1000
+                if now >= self.max_ms:
+                    self.reason = "limit"
+                    return
+                if fired := watcher.check(now):
+                    self.reason = fired
+                    return
+        except Exception:  # noqa: BLE001 - a failed snapshot just ends the carry
+            self.reason = "error"
+        finally:
+            self.io.set_pad(NEUTRAL)
+            self.elapsed_ms = round((time.monotonic() - self._start) * 1000)
+
+    def stop(self) -> tuple[int, str]:
+        """Release the pad and return (ms carried, why it ended)."""
+        self._halt.set()
+        self._thread.join()
+        return self.elapsed_ms, self.reason or "next decision"

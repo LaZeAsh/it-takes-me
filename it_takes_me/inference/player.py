@@ -111,22 +111,34 @@ class GamePlayer:
 
     def play(self) -> None:
         turn_no = 0
-        while not self._stop.is_set():
-            if self.settings.max_turns is not None and turn_no >= self.settings.max_turns:
-                break
-            turn_no += 1
-            self._run_turn(turn_no)
+        try:
+            while not self._stop.is_set():
+                if self.settings.max_turns is not None and turn_no >= self.settings.max_turns:
+                    break
+                turn_no += 1
+                self._run_turn(turn_no)
+        finally:
+            self.tools.settle()
 
-    def _turn_text(self, turn_no: int, hints: list[str]) -> str:
+    def _turn_text(self, turn_no: int, hints: list[str], note: str | None = None) -> str:
         parts = [
             f"Turn {turn_no}. Here is the current frame. Continue playing as "
             f"{self.settings.character}."
         ]
+        if note:
+            parts.append(note)
+        task = self.tools.current_task
+        if task is not None:
+            parts.append(
+                f"Your current task: {task}. Keep working on it until the frame shows it is "
+                "complete before starting anything else."
+            )
         if hints:
             parts.append("Your partner says: " + " | ".join(hints))
         return " ".join(parts)
 
     def _run_turn(self, turn_no: int) -> None:
+        note = self.tools.settle()
         png = self.io.capture()
         reason = f"turn {turn_no} start"
         self.recorder.frame(png, reason=reason)
@@ -146,7 +158,7 @@ class GamePlayer:
         self.tools.begin_turn()
         self.recorder.event("turn_start", turn=turn_no, hints=hints)
 
-        handle = self.session.turn(self._turn_text(turn_no, hints), frame_path)
+        handle = self.session.turn(self._turn_text(turn_no, hints, note), frame_path)
         self._active = handle
         self.console.rule(f"turn {turn_no}")
         try:

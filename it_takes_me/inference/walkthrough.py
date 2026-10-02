@@ -8,22 +8,21 @@ from __future__ import annotations
 
 WALKTHROUGHS: dict[str, list[str]] = {
     "The Shed": [
-        "Wake-up Call (start of the chapter, among moving boxes and jars):",
-        "1. Find the lever that lowers the staircase and pull it together with your partner: "
-        "both of you `interact` with it. Along the way there is a bell, a wide metal can you "
-        "can roll, and jars you can smash with `ground_pound`; these are optional.",
-        "2. Pulling the lever makes three fuses fly away. One of them runs off. Chase that "
-        "running fuse; it flees when you get close, leading you through platforming.",
-        "3. The fuse gets stuck in a jar: jump onto the jar and `ground_pound` to free it.",
-        "4. The fuse pushes a piece of wood against a wall to climb higher. Follow it with "
-        "wall jumps: jump at the wall, then jump again while touching it to kick off.",
-        "5. The fuse rides a saw up onto the toolbox, then jumps over a green door. Open the "
-        "door together with your partner, holding it down while both of you get through. "
-        "The game teaches `double_jump` here.",
-        "6. The fuse waits, then runs into a cord. Crouch through it: hold B while moving "
-        '(a `raw` step with buttons ["B"] and the left stick held). Then the game teaches '
-        "sprinting (`run` with `sprint: true`).",
-        "After this, the wiki has no further steps: follow the on-screen markers.",
+        "Wake-up Call, the opening area among moving boxes and jars:",
+        "- A lever lowers a staircase; both players `interact` with it together. Nearby are a "
+        "bell, a wide metal can you can roll, and jars you can smash; they do nothing for "
+        "progress.",
+        "- Pulling the lever makes three fuses fly away. Two stay put; one runs off and flees "
+        "whenever you get close, leading you through platforming.",
+        "- The running fuse gets stuck in a jar: jump onto the jar and `ground_pound` to free it.",
+        "- The fuse pushes a piece of wood against a wall to climb higher; follow with wall "
+        "jumps (jump at the wall, then jump again while touching it to kick off).",
+        "- The fuse rides a saw up onto the toolbox and jumps over a green door. Both players "
+        "open the door and hold it down to get through. The game teaches `double_jump` here.",
+        "- The fuse runs into a cord that you crouch through: hold B while moving (a `raw` "
+        'step with buttons ["B"] and the left stick held). The game then teaches sprinting '
+        "(`run` with `sprint: true`).",
+        "- The wiki does not describe the chapter beyond this point.",
     ],
 }
 

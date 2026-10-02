@@ -17,10 +17,17 @@ click the right stick and reveal the partner's location, then plan its route fro
 ## On-screen markers and walkthroughs
 
 The prompt tells the model to treat the game's on-screen icons as its task list, in priority
-order: in-range button prompts (a `Y` circle or a tutorial such as `X Dash`), then white diamond
-objective markers, and never the partner's colored location dot. `CHAPTER` in `run.py` adds that
-chapter's walkthrough, adapted from the It Takes Two wiki (`it_takes_me/inference/walkthrough.py`),
+order: yellow circles on objects (a ring around a white dot, or a `Y` when in range), then
+tutorial prompts such as `X Dash`, then the distant white objective hexagon, and never the
+partner's colored location dot. `CHAPTER` in `run.py` adds that
+chapter's background, adapted from the It Takes Two wiki (`it_takes_me/inference/walkthrough.py`),
 so the model knows what the markers lead to. Set it to `None` to use markers only.
+
+The model works on one task at a time. Every `act` names its `task`; changing it is refused (with
+nothing pressed) unless the call also marks the previous task `done` or `blocked`. Each turn's
+message repeats the current task. The model defines each task from the current frame, since play
+can resume from any checkpoint; the walkthrough is background, not a checklist. A chunk that stops
+on a scene cut (respawn, checkpoint reload, cutscene) clears the task so it is defined again.
 
 ## Action timing
 
@@ -45,7 +52,11 @@ short runs separated by inference. Runs longer than 3,000 ms automatically check
 snapshots locally for a stuck view or abrupt scene change. A check stops the chunk, skips later
 steps, releases the controller, and reports why. These checks cannot detect arrival at a target
 or every hazard, so the model should shorten runs near edges and destinations. The pad releases
-at the end of every chunk; it does not keep running during inference. `MAX_CHUNK_MS` in `run.py`
+at the end of every chunk unless the model sets `keep_moving` on a chunk that ends with a
+directional `run`. Then that run continues in the background while the model plans, until its next
+tool call or turn, a stuck view, a scene cut, or `CARRY_MAX_MS` (6 s); the next result says how long
+it kept moving. The prompt asks for 4-8 s chunks when travelling, since every call costs seconds of
+planning time standing still. `MAX_CHUNK_MS` in `run.py`
 sets the overall chunk limit.
 
 ## Setup
@@ -85,7 +96,8 @@ Every session is recorded to `runs/<timestamp>/` (frames + `events.jsonl`).
 Model observations are cropped to the controlled character's half and resized separately from the
 recording. `frames/` contains the original full-resolution captures; `observations/` contains the
 exact JPEGs sent to the model. Navigation uses a 512 px observation by default. The
-`look_at_screen` tool can request a 1,536 px high-detail observation for small prompts or objects.
+`look_at_screen` tool only returns a 1,536 px high-detail observation for small prompts or objects,
+at most once between actions; turns and `act` already return fresh navigation frames.
 
 ## Responses API
 

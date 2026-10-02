@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import io
+import threading
 import unittest
 from collections.abc import Callable
 from unittest.mock import patch
@@ -157,7 +159,9 @@ class ActionTimingTests(unittest.TestCase):
                 step = {"skill": "skip_cutscene"}
                 if duration is not None:
                     step["ms"] = duration
-                response = tools.dispatch("act", {"intent": "skip the cutscene", "steps": [step]})
+                response = tools.dispatch(
+                    "act", {"task": "skip", "intent": "skip the cutscene", "steps": [step]}
+                )
                 self.assertTrue(response["success"])
                 self.assertEqual(
                     self.io.inputs,
@@ -165,6 +169,90 @@ class ActionTimingTests(unittest.TestCase):
                 )
                 # Camera cuts during a cutscene must not interrupt the required hold.
                 self.assertEqual(self.io.snapshots, 0)
+
+    def test_task_switch_requires_closing_the_current_task(self) -> None:
+        tools = build_game_tools(self.io, frame_after_action=False)
+        wait = [{"skill": "wait", "ms": 100}]
+
+        def act(**fields: object) -> dict:
+            return tools.dispatch("act", {"intent": "step", "steps": wait, **fields})
+
+        self.assertFalse(act()["success"])
+        self.assertTrue(act(task="pull the lever")["success"])
+        self.assertTrue(act(task="Pull the  lever")["success"])
+        self.io.inputs.clear()
+        refused = act(task="roll the can")
+        self.assertFalse(refused["success"])
+        self.assertIn("pull the lever", refused["contentItems"][0]["text"])
+        self.assertEqual(self.io.inputs, [])
+        self.assertEqual(tools.current_task, "pull the lever")
+        self.assertTrue(act(task="chase the fuse", previous_task="done")["success"])
+        self.assertEqual(tools.current_task, "chase the fuse")
+
+    def test_scene_cut_clears_the_current_task(self) -> None:
+        tools = build_game_tools(self.io, frame_after_action=False)
+        wait = [{"skill": "wait", "ms": 100}]
+        tools.dispatch("act", {"task": "pull the lever", "intent": "step", "steps": wait})
+        self.io.snapshot_fn = lambda size, n: Image.new("L", size, 0 if n == 1 else 255)
+        run = [{"skill": "run", "dir": "forward", "ms": 7000}]
+        response = tools.dispatch("act", {"task": "pull the lever", "intent": "go", "steps": run})
+        self.assertIn("task cleared", response["contentItems"][1]["text"])
+        self.assertIsNone(tools.current_task)
+        self.assertTrue(
+            tools.dispatch("act", {"task": "chase the fuse", "intent": "go", "steps": wait})[
+                "success"
+            ]
+        )
+
+    def test_keep_moving_holds_the_run_until_the_next_call(self) -> None:
+        tools = build_game_tools(self.io, frame_after_action=False)
+        run = [{"skill": "run", "dir": "forward", "sprint": True, "ms": 500}]
+        response = tools.dispatch(
+            "act", {"task": "t", "intent": "go", "steps": run, "keep_moving": True}
+        )
+        self.assertTrue(response["success"])
+        held = PadState(left=(0.0, 1.0), buttons=frozenset({Button.LS}))
+        self.assertEqual(self.io.inputs[-1][1], held)
+        self.assertNotIn(NEUTRAL, [state for _, state in self.io.inputs])
+
+        wait = [{"skill": "wait", "ms": 100}]
+        response = tools.dispatch("act", {"task": "t", "intent": "stop", "steps": wait})
+        texts = [item["text"] for item in response["contentItems"] if item["type"] == "inputText"]
+        self.assertIn("You kept moving", texts[0])
+        self.assertEqual(self.io.inputs[-1][1], NEUTRAL)
+        self.assertIsNone(tools.settle())
+
+    def test_keep_moving_requires_a_final_directional_run(self) -> None:
+        tools = build_game_tools(self.io, frame_after_action=False)
+        for steps in ([{"skill": "jump", "dir": "forward"}], [{"skill": "run", "dir": "none"}]):
+            with self.subTest(steps=steps):
+                response = tools.dispatch(
+                    "act", {"task": "t", "intent": "go", "steps": steps, "keep_moving": True}
+                )
+                self.assertFalse(response["success"])
+        self.assertEqual(self.io.inputs, [])
+
+    def test_carry_stops_on_scene_cut_and_clears_task(self) -> None:
+        tools = build_game_tools(self.io, frame_after_action=False)
+        run = [{"skill": "run", "dir": "forward", "ms": 500}]
+        tools.dispatch("act", {"task": "t", "intent": "go", "steps": run, "keep_moving": True})
+        self.io.snapshot_fn = lambda size, n: Image.new("L", size, 255)
+        threading.Event().wait(0.5)  # real time: the carry thread polls every 100 ms
+        self.assertEqual(self.io.inputs[-1][1], NEUTRAL)
+        note = tools.settle()
+        self.assertIn("ended: cut", note)
+        self.assertIsNone(tools.current_task)
+
+    def test_look_at_screen_is_high_detail_once_between_actions(self) -> None:
+        png = io.BytesIO()
+        Image.new("RGB", (64, 36)).save(png, "PNG")
+        self.io.capture = lambda: png.getvalue()
+        tools = build_game_tools(self.io, frame_after_action=False)
+        self.assertTrue(tools.dispatch("look_at_screen", {})["success"])
+        self.assertFalse(tools.dispatch("look_at_screen", {})["success"])
+        wait = [{"skill": "wait", "ms": 100}]
+        tools.dispatch("act", {"task": "t", "intent": "wait", "steps": wait})
+        self.assertTrue(tools.dispatch("look_at_screen", {})["success"])
 
     def test_invalid_timing_is_rejected_before_any_input(self) -> None:
         invalid = [{"skill": "run", "ms": value} for value in (0, -1, 100.5, True, "500")] + [
@@ -267,6 +355,7 @@ class ActionTimingTests(unittest.TestCase):
         response = tools.dispatch(
             "act",
             {
+                "task": "find Cody",
                 "intent": "tap then move",
                 "steps": [
                     {"skill": "press", "button": "RS", "dir": "forward", "ms": 600, "hold_ms": 100},
