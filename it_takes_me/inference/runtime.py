@@ -161,6 +161,7 @@ class CodexRuntime:
         reasoning_effort: str,
         character: str,
         extra_instructions: list[str] | None,
+        chapter: str | None,
         ephemeral: bool,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -170,7 +171,9 @@ class CodexRuntime:
                 "model_reasoning_effort": reasoning_effort,
                 "model_auto_compact_token_limit": self._compact_threshold,
             },
-            "developerInstructions": developer_instructions(character, extra_instructions),
+            "developerInstructions": developer_instructions(
+                character, extra_instructions, chapter=chapter
+            ),
             "sandbox": "read-only",
             "approvalPolicy": "never",
             "ephemeral": ephemeral,
@@ -188,6 +191,7 @@ class CodexRuntime:
         reasoning_effort: str,
         character: str,
         extra_instructions: list[str] | None = None,
+        chapter: str | None = None,
         ephemeral: bool = False,
     ) -> Thread:
         payload = self._thread_payload(
@@ -195,6 +199,7 @@ class CodexRuntime:
             reasoning_effort=reasoning_effort,
             character=character,
             extra_instructions=extra_instructions,
+            chapter=chapter,
             ephemeral=ephemeral,
         )
         started = self._client.thread_start(payload)
@@ -208,6 +213,7 @@ class CodexRuntime:
         reasoning_effort: str,
         character: str,
         extra_instructions: list[str] | None = None,
+        chapter: str | None = None,
         ephemeral: bool = False,
     ) -> CodexSession:
         payload = self._thread_payload(
@@ -215,6 +221,7 @@ class CodexRuntime:
             reasoning_effort=reasoning_effort,
             character=character,
             extra_instructions=extra_instructions,
+            chapter=chapter,
             ephemeral=ephemeral,
         )
         started = self._client.thread_start(payload)

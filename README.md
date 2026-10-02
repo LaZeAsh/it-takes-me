@@ -14,6 +14,14 @@ locally with exact timing before returning the resulting frame(s).
 When the model loses track of its partner, it can use `locate_partner` in an action chunk to
 click the right stick and reveal the partner's location, then plan its route from the returned frame.
 
+## On-screen markers and walkthroughs
+
+The prompt tells the model to treat the game's on-screen icons as its task list, in priority
+order: in-range button prompts (a `Y` circle or a tutorial such as `X Dash`), then white diamond
+objective markers, and never the partner's colored location dot. `CHAPTER` in `run.py` adds that
+chapter's walkthrough, adapted from the It Takes Two wiki (`it_takes_me/inference/walkthrough.py`),
+so the model knows what the markers lead to. Set it to `None` to use markers only.
+
 ## Action timing
 
 The model chooses `ms` (total step duration) for every skill. Button skills also accept `hold_ms`:

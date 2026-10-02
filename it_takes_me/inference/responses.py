@@ -150,6 +150,7 @@ class ResponsesSession:
         reasoning_effort: str,
         character: str,
         extra_instructions: list[str] | None,
+        chapter: str | None,
         compact_threshold: int,
         max_output_tokens: int,
         store: bool,
@@ -159,7 +160,7 @@ class ResponsesSession:
         self.model = model
         self.id = "responses:new"
         self.reasoning_effort = reasoning_effort
-        self.instructions = developer_instructions(character, extra_instructions)
+        self.instructions = developer_instructions(character, extra_instructions, chapter=chapter)
         self.compact_threshold = compact_threshold
         self.max_output_tokens = max_output_tokens
         self.store = store
@@ -233,6 +234,7 @@ class ResponsesRuntime:
         reasoning_effort: str,
         character: str,
         extra_instructions: list[str] | None = None,
+        chapter: str | None = None,
         ephemeral: bool = False,
     ) -> ResponsesSession:
         del ephemeral
@@ -243,6 +245,7 @@ class ResponsesRuntime:
             reasoning_effort=reasoning_effort,
             character=character,
             extra_instructions=extra_instructions,
+            chapter=chapter,
             compact_threshold=self.compact_threshold,
             max_output_tokens=self.max_output_tokens,
             store=self.store,
