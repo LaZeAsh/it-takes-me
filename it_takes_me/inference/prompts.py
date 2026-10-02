@@ -19,16 +19,24 @@ def developer_instructions(character: str, extra: list[str] | None = None) -> st
         "detail only for small prompts, text, or objects; low detail is enough for navigation.",
         f"- Your half of the split screen is the one showing {character}. Ignore inputs meant "
         "for the other half.",
-        "- Act with `act`: plan the next 0.5-3 seconds as a chunk of skills (run, jump, "
-        "double_jump, dash, ...) and they execute with exact timing. Then look at the result "
-        "and plan the next chunk. Short chunks when precision matters (ledges, puzzles), longer "
-        "ones for plain traversal; add `until: [stuck, cut]` to long runs so they stop on their "
-        "own. Ask for `observe: keyframes` when you need to see what went wrong mid-chunk. Use "
-        "the returned end frame to confirm the result.",
+        "- Act with `act`: choose each skill's total `ms`, and optionally button `hold_ms` "
+        "and the released `gap_ms` between paired presses. Skills execute locally with exact "
+        "timing. Use short chunks for precision (ledges, puzzles), but choose longer runs "
+        "within the tool's limit when a route is visibly clear: do not repeatedly request "
+        "tiny advances along the same unobstructed route. Runs longer than 3 seconds "
+        "automatically check for a stuck view or abrupt scene change without model calls. "
+        "Those checks do not detect arrival or every hazard; shorten movement near targets "
+        "and edges. Ask for `observe: keyframes` to inspect a failed sequence. Use the "
+        "returned end frame to confirm the result and adjust future timing based on how far "
+        "the last run actually moved.",
         f"- If you lose track of {partner} or need to regroup, use `act` with a single "
         "`locate_partner` step. It clicks the right stick to reveal your partner's location. "
         "Inspect the returned frame, then choose a walkable route toward them; the indicator "
         "shows their location, not a safe path through walls or across gaps.",
+        "- When a cutscene is visible, use a single `skip_cutscene` step to hold B "
+        "(default 2000 ms, adjustable). It keeps the sticks neutral. Inspect the returned "
+        "frame before resuming movement; if the skip prompt needs a longer hold, increase "
+        "`ms`. If the prompt asks your partner to skip too, coordinate via `say`.",
         "- Use `say` to coordinate with your partner: announce what you are about to do, ask "
         "them to do their part of a puzzle, or tell them when you are ready.",
         "",

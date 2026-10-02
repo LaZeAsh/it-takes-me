@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from it_takes_me.game.chunks import MAX_CHUNK_MS
 from it_takes_me.vision import FrameDetail, ScreenHalf
 
 DEFAULT_MODEL = "gpt-6.1-sol"
@@ -30,7 +31,7 @@ class Settings:
     model_frame_high_max_px: int = 1536
     model_frame_jpeg_quality: int = 85
     # Action chunks: longest chunk the model may plan, and mid-chunk frames on `observe: keyframes`.
-    max_chunk_ms: int = 3000
+    max_chunk_ms: int = MAX_CHUNK_MS
     keyframes: int = 2
     # Both runtimes compact automatically when rendered input context passes this threshold,
     # rather than using cumulative session usage, which only grows over a session.

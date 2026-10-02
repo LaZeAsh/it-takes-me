@@ -11,6 +11,7 @@ import base64
 import logging
 import time
 from collections.abc import Callable
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -145,9 +146,23 @@ _STEP_SCHEMA: dict[str, Any] = {
     "properties": {
         "skill": {"type": "string", "enum": list(SKILLS)},
         "dir": {"type": "string", "enum": list(DIRECTIONS)},
-        "ms": {"type": "integer", "minimum": 0, "maximum": MAX_CHUNK_MS},
+        "ms": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Total step duration, including button holds, gaps, and movement.",
+        },
+        "hold_ms": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Button hold within ms; each hold for double_jump/jump_dash.",
+        },
+        "gap_ms": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Released time between the two presses in double_jump/jump_dash.",
+        },
         "sprint": {"type": "boolean"},
-        "button": {"type": "string", "enum": ["LT", "RT"]},
+        "button": {**_BUTTON, "description": "Any button for press; only LT or RT for ability."},
         "look": {"type": "string", "enum": list(LOOK_DIRECTIONS)},
         "left": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
         "right": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
@@ -160,25 +175,40 @@ _STEP_SCHEMA: dict[str, Any] = {
 
 _ACT_DESCRIPTION = """\
 Play a short chunk of input (up to {max_ms} ms total). Steps run back to back with exact \
-timing on the pad; the pad returns to neutral when the chunk ends. Plan the next 0.5-3 s, not \
-more: you will see the result and plan again.
+timing on the pad; the pad returns to neutral when the chunk ends. Choose durations based on \
+distance and uncertainty: 100-500 ms for precise corrections, 1-3 s to explore, and longer \
+runs for a clearly visible unobstructed route, within the total limit. Avoid repeated short \
+runs on a clear route: each new decision adds model latency. Shorten runs near a destination \
+or hazard; the local checks cannot detect arrival or reliably prevent falls.
+
+Every skill accepts `ms`, its TOTAL duration. Button skills also accept `hold_ms`: the button \
+is held at the start, then released while movement continues for the remaining ms. Defaults \
+are 100 ms holds, except interact/ability/skip_cutscene which hold for the entire step. \
+A hold must fit within ms. double_jump/jump_dash also accept `gap_ms` (default 250): time between \
+two holds, each of hold_ms. Their total ms must cover 2*hold_ms + gap_ms. All timings are \
+positive integers. Omitted fields retain the defaults below.
 
 `dir` is relative to the camera: forward, back, left, right, forward-left, forward-right, \
-back-left, back-right, none. Every skill except wait/raw accepts `dir` (steer while doing it).
+back-left, back-right, none. Every skill except wait/raw/skip_cutscene accepts `dir` \
+(steer while doing it).
 
 Skills:
 - run {{dir, ms=500, sprint?, until?}}: move with the left stick.
-- jump {{dir}}: one jump, including airtime.
-- double_jump {{dir}}: jump, then jump again in the air (longer/higher gaps).
-- dash {{dir}}: quick dash (works in the air too).
-- jump_dash {{dir}}: jump then dash in the air (long horizontal gaps).
-- ground_pound {{dir}}: slam down; use while airborne.
-- interact {{dir, ms=100}}: Y. Use a longer ms for hold-to-interact prompts.
-- grapple {{dir}}: RB, grapple to a rope point in range.
-- ability {{button: LT|RT, dir, ms=300}}: hold a chapter ability trigger.
+- jump {{dir, ms=500, hold_ms=100}}: one jump, including movement after release.
+- double_jump {{dir, ms=850, hold_ms=100, gap_ms=250}}: jump, then jump again in the air.
+- dash {{dir, ms=350, hold_ms=100}}: quick dash (works in the air too).
+- jump_dash {{dir, ms=700, hold_ms=100, gap_ms=250}}: jump then dash in the air.
+- ground_pound {{dir, ms=600, hold_ms=100}}: slam down; use while airborne.
+- interact {{dir, ms=100, hold_ms?}}: Y. Defaults to holding for ms; set hold_ms for a tap.
+- grapple {{dir, ms=700, hold_ms=100}}: RB, grapple to a rope point in range.
+- ability {{button: LT|RT, dir, ms=300, hold_ms?}}: trigger; defaults to holding for ms.
 - look {{look: left|right|up|down, dir, ms=200}}: turn the camera.
-- locate_partner {{dir}}: click the right stick (RS) to reveal your partner's location. \
+- locate_partner {{dir, ms=300, hold_ms=100}}: click RS to reveal your partner's location. \
 Use this alone when you lose track of your partner; inspect the returned frame before moving.
+- skip_cutscene {{ms=2000, hold_ms?}}: hold B to skip a visible cutscene, with neutral sticks. \
+Defaults to holding for the entire ms. Use this as a single step and inspect the returned \
+frame before resuming gameplay. Choose a longer ms if the skip prompt needs more hold time.
+- press {{button, dir, ms=100, hold_ms=100}}: press any button, optionally move after release.
 - wait {{ms=500, until?}}: stand still.
 - raw {{ms, left: [x,y], right: [x,y], buttons: [...]}}: exact pad state for ms, for anything \
 the skills cannot express. Sticks in [-1, 1], +y is forward/up.
@@ -187,11 +217,13 @@ the skills cannot express. Sticks in [-1, 1], +y is forward/up.
 fires; the rest of the chunk is then skipped and you are told which check fired:
 - stuck: your view stopped changing while you were moving (walked into a wall or ledge).
 - cut: the screen changed abruptly (cutscene, fade, respawn, menu).
-Use it for longer traversal, e.g. run forward ms=3000 until [stuck, cut], or wait until [cut] \
-through a cutscene.
+Runs longer than 3000 ms automatically enable stuck and cut checks (cut only with dir=none), \
+even if until is omitted or empty. Shorter runs can opt in using until. For example, \
+run forward ms=7000 executes without another model decision until its timeout or a check \
+fires, provided it fits the chunk limit. Wait can use until [cut] through a cutscene.
 
 `observe`: "end" (default) returns the frame after the chunk; "keyframes" also returns \
-{{n}} frames from during the chunk, to see why a jump or sequence went wrong."""
+{n} frames from during the chunk, to see why a jump or sequence went wrong."""
 
 
 def build_game_tools(
@@ -210,6 +242,9 @@ def build_game_tools(
 ) -> ToolRegistry:
     reg = ToolRegistry(max_calls_per_turn=max_calls_per_turn)
     encoder = frame_encoder or ModelFrameEncoder(half=screen_half)
+    step_schema = deepcopy(_STEP_SCHEMA)
+    for timing in ("ms", "hold_ms", "gap_ms"):
+        step_schema["properties"][timing]["maximum"] = max_chunk_ms
 
     def frame(png: bytes, reason: str, detail: FrameDetail = "low") -> ContentItem:
         if on_frame is not None:
@@ -282,7 +317,7 @@ def build_game_tools(
                     "maxLength": 200,
                     "description": "What this chunk is meant to achieve, in a few words.",
                 },
-                "steps": {"type": "array", "items": _STEP_SCHEMA, "minItems": 1},
+                "steps": {"type": "array", "items": step_schema, "minItems": 1},
                 "observe": {"type": "string", "enum": ["end", "keyframes"]},
             },
             "required": ["intent", "steps"],

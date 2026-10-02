@@ -7,12 +7,38 @@ The default harness talks to the model through the **Codex app-server** using th
 `openai-codex` Python SDK, so it runs on your ChatGPT/Codex subscription (no API key). An optional
 **Responses API** harness runs the same player and tools with API models.
 Game actions are exposed to the model as dynamic tools on one persistent thread. The model
-acts in **chunks**: one `act` call plans 0.5-3 s of play as a list of skills (`run`, `jump`,
+acts in **chunks**: one `act` call plans up to 10 s of play as a list of skills (`run`, `jump`,
 `double_jump`, `dash`, ...) or raw pad segments, which `it_takes_me/game/chunks.py` executes
 locally with exact timing before returning the resulting frame(s).
 
 When the model loses track of its partner, it can use `locate_partner` in an action chunk to
 click the right stick and reveal the partner's location, then plan its route from the returned frame.
+
+## Action timing
+
+The model chooses `ms` (total step duration) for every skill. Button skills also accept `hold_ms`:
+hold the button, then release it while continuing movement for the remaining time. `double_jump`
+and `jump_dash` accept `gap_ms`, the release time between the two presses. Each press lasts
+`hold_ms`, so the total must cover both holds and the gap. All durations are positive integer
+milliseconds; omitted timings preserve the original skill defaults. `interact`, `ability`, and
+`skip_cutscene` hold for the whole step by default. `press` can tap any controller button.
+
+`skip_cutscene` holds B with neutral sticks to skip a cutscene. Its default duration is 2,000 ms;
+the model can choose a longer `ms` if needed and inspects the returned frame before moving again.
+
+For example, this jumps with a 100 ms press and moves forward for 800 ms total:
+
+```json
+{"intent": "jump across the gap", "steps": [{"skill": "jump", "dir": "forward", "ms": 800, "hold_ms": 100}]}
+```
+
+For a clear stretch of traversal, the model can request a single 7,000 ms run rather than many
+short runs separated by inference. Runs longer than 3,000 ms automatically check low-resolution
+snapshots locally for a stuck view or abrupt scene change. A check stops the chunk, skips later
+steps, releases the controller, and reports why. These checks cannot detect arrival at a target
+or every hazard, so the model should shorten runs near edges and destinations. The pad releases
+at the end of every chunk; it does not keep running during inference. `MAX_CHUNK_MS` in `run.py`
+sets the overall chunk limit.
 
 ## Setup
 

@@ -11,6 +11,7 @@ from pathlib import Path
 
 from it_takes_me.app import play_session
 from it_takes_me.config import DEFAULT_MODEL, DEFAULT_REASONING_EFFORT, Settings
+from it_takes_me.game.chunks import MAX_CHUNK_MS as DEFAULT_MAX_CHUNK_MS
 from it_takes_me.game.io import GameIO
 from it_takes_me.game.pad_gui import PadMixer, start_pad_window
 from it_takes_me.game.pad_host import RemotePadIO, connect_pad
@@ -38,7 +39,7 @@ MODEL_FRAME_DETAIL: FrameDetail = "low"  # high is for small prompts/details
 MODEL_FRAME_LOW_MAX_PX = 512
 MODEL_FRAME_HIGH_MAX_PX = 1536
 MODEL_FRAME_JPEG_QUALITY = 85
-MAX_CHUNK_MS = 3000  # longest action chunk the model may plan in one `act` call
+MAX_CHUNK_MS = DEFAULT_MAX_CHUNK_MS  # up to 10 s; long runs automatically monitor stuck/cut
 KEYFRAMES = 2  # mid-chunk frames returned when the model asks for `observe: keyframes`
 COMPACT_AFTER_INPUT_TOKENS = 200_000
 MAX_OUTPUT_TOKENS = 4000
