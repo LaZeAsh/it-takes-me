@@ -69,6 +69,13 @@ it kept moving. The prompt asks for 4-8 s chunks when travelling, since every ca
 planning time standing still. `MAX_CHUNK_MS` in `run.py`
 sets the overall chunk limit.
 
+## Luna + Jev player (separate technique)
+
+`run_jev.py` runs a second, independent player: Luna (a vision model, on your Codex subscription
+in Fast mode) describes each frame and Jev (TypeSafe's decision model, via OpenRouter) picks the
+next skill from the same skill set. It needs `OPENROUTER_API_KEY` in `.env` for Jev and records to
+`runs/jev/`. See `it_takes_me/jev/README.md`.
+
 ## Setup
 
 ```bash

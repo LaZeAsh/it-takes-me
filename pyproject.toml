@@ -15,6 +15,7 @@ dependencies = [
     "rich>=13.0",
     "vgamepad>=0.1.0; sys_platform == 'win32'",
     "pydirectinput>=1.0.4; sys_platform == 'win32'",
+    "python-dotenv>=1.2.4",
 ]
 
 [dependency-groups]

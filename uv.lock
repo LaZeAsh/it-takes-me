@@ -103,6 +103,7 @@ dependencies = [
     { name = "pillow" },
     { name = "pydantic" },
     { name = "pydirectinput", marker = "sys_platform == 'win32'" },
+    { name = "python-dotenv" },
     { name = "rich" },
     { name = "vgamepad", marker = "sys_platform == 'win32'" },
 ]
@@ -121,6 +122,7 @@ requires-dist = [
     { name = "pillow", specifier = ">=11.0" },
     { name = "pydantic", specifier = ">=2.12" },
     { name = "pydirectinput", marker = "sys_platform == 'win32'", specifier = ">=1.0.4" },
+    { name = "python-dotenv", specifier = ">=1.2.4" },
     { name = "rich", specifier = ">=13.0" },
     { name = "vgamepad", marker = "sys_platform == 'win32'", specifier = ">=0.1.0" },
 ]
@@ -569,6 +571,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/e1/1b/244c7b710031ada80f27e579ec20d28a2285dfc318fed0339866b1047f12/pyright-1.1.414.tar.gz", hash = "sha256:523c0a97c60da6333234955c277730c9cf4f5bd6d5399e7b7d2b0fc5d3599524", size = 4154638, upload-time = "2026-09-10T12:26:53.181Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d7/ba/18b6e682ead424ad24bcc134339ae5d1b931cd9ae260540592a058a91279/pyright-1.1.414-py3-none-any.whl", hash = "sha256:2a6b4b3298c9eec174c5ed83bd338de6eee82df2992f3e1930e6199d381be36f", size = 6225049, upload-time = "2026-09-10T12:26:51.427Z" },
+]
+
+[[package]]
+name = "python-dotenv"
+version = "1.2.4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/74/26/2fbeedb218a787a5eea551c7532cac4e009f83d689dd2faa0d0353473f86/python_dotenv-1.2.4.tar.gz", hash = "sha256:f0d53e69935a851c0dcc78f3ab7aaccd8cabef0b92382b576b824212902873c0", size = 60824, upload-time = "2026-10-01T05:36:10Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/60/d1/38f3a3405989a89ac18390803e70c6ad7c7760da4f9b83cbeca0c44a0c72/python_dotenv-1.2.4-py3-none-any.whl", hash = "sha256:42269a8a5b3fd54ffa6f3d84b18abed50064717576b4ecf03dc4a55d8aa04fdc", size = 23266, upload-time = "2026-10-01T05:36:08.633Z" },
 ]
 
 [[package]]
