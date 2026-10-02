@@ -97,9 +97,11 @@ class CodexRuntime:
         cwd: Path | None = None,
         tools: ToolRegistry | None = None,
         compact_threshold: int = 200_000,
+        service_tier: str | None = None,
     ) -> None:
         self.tools = tools  # noqa: BLE001
         self._compact_threshold = compact_threshold
+        self._service_tier = service_tier
         self._client = CodexClient(
             config=CodexConfig(cwd=str(cwd) if cwd else None),
             approval_handler=self._on_server_request,
@@ -173,6 +175,8 @@ class CodexRuntime:
             "approvalPolicy": "never",
             "ephemeral": ephemeral,
         }
+        if self._service_tier is not None:
+            payload["serviceTier"] = self._service_tier
         if self.tools is not None:
             payload["dynamicTools"] = self.tools.specs()
         return payload

@@ -17,6 +17,8 @@ class Settings:
     runtime: str = "codex"
     model: str = DEFAULT_MODEL
     reasoning_effort: str = DEFAULT_REASONING_EFFORT
+    # Codex only: "priority" is the Fast tier (~2x speed, more usage). `None` uses the standard tier.
+    service_tier: str | None = "priority"
     runs_dir: Path = Path("runs")
     # Which character the model controls. The human plays the other one.
     character: str = "May"

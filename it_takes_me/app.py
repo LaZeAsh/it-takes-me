@@ -72,6 +72,7 @@ def play_session(
             cwd=settings.cwd,
             tools=tools,
             compact_threshold=settings.compact_after_input_tokens,
+            service_tier=settings.service_tier,
         )
     elif settings.runtime == "responses":
         runtime = ResponsesRuntime(

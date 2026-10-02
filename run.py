@@ -27,6 +27,7 @@ from rich.logging import RichHandler
 RUNTIME = "codex"  # "codex" uses your subscription; "responses" uses OPENAI_API_KEY
 MODEL = DEFAULT_MODEL
 REASONING_EFFORT = DEFAULT_REASONING_EFFORT
+SERVICE_TIER: str | None = "priority"  # Codex "Fast" tier: ~2x speed, more usage. None = standard
 CHARACTER = "May"
 
 MONITOR = 1  # mss monitor index the game is on (1 = primary)
@@ -64,6 +65,7 @@ def main() -> None:
         runtime=RUNTIME,
         model=MODEL,
         reasoning_effort=REASONING_EFFORT,
+        service_tier=SERVICE_TIER,
         runs_dir=RUNS_DIR,
         character=CHARACTER,
         max_tool_calls_per_turn=MAX_TOOL_CALLS_PER_TURN,
