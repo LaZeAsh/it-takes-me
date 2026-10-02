@@ -29,7 +29,6 @@ MODEL = DEFAULT_MODEL
 REASONING_EFFORT = DEFAULT_REASONING_EFFORT
 SERVICE_TIER: str | None = "priority"  # Codex "Fast" tier: ~2x speed, more usage. None = standard
 CHARACTER = "May"
-CHAPTER: str | None = "The Shed"  # wiki walkthrough in the prompt; None for markers only
 
 MONITOR = 1  # mss monitor index the game is on (1 = primary)
 SHOW_PAD = True  # on-screen controller when run.py owns the pad (pad.py shows its own)
@@ -69,7 +68,6 @@ def main() -> None:
         service_tier=SERVICE_TIER,
         runs_dir=RUNS_DIR,
         character=CHARACTER,
-        chapter=CHAPTER,
         max_tool_calls_per_turn=MAX_TOOL_CALLS_PER_TURN,
         max_turns=MAX_TURNS,
         frame_after_action=FRAME_AFTER_ACTION,

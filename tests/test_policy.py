@@ -26,14 +26,11 @@ class GameplayPolicyTests(unittest.TestCase):
         self.assertLess(prompt.index("Yellow circle"), prompt.index("Objective hexagon"))
         self.assertIn("Cody's, green on your screen", prompt)
 
-    def test_prompt_includes_chapter_walkthrough(self) -> None:
-        prompt = developer_instructions("May", chapter="The Shed")
+    def test_prompt_has_no_walkthrough(self) -> None:
+        prompt = developer_instructions("May")
 
-        self.assertIn("## Chapter background: The Shed", prompt)
-        self.assertIn("lever", prompt)
-        self.assertIn("It is not a checklist", prompt)
-        self.assertIn("resume from any checkpoint", prompt)
-        self.assertNotIn("Chapter background", developer_instructions("May"))
+        self.assertIn("there is no walkthrough", prompt)
+        self.assertNotIn("wiki", prompt)
 
 
 if __name__ == "__main__":

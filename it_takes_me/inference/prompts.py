@@ -2,12 +2,8 @@
 
 from __future__ import annotations
 
-from it_takes_me.inference.walkthrough import walkthrough
 
-
-def developer_instructions(
-    character: str, extra: list[str] | None = None, *, chapter: str | None = None
-) -> str:
+def developer_instructions(character: str, extra: list[str] | None = None) -> str:
     partner = "Cody" if character.lower() == "may" else "May"
     partner_dot = "green" if partner == "Cody" else "blue"
     lines = [
@@ -34,6 +30,18 @@ def developer_instructions(
         "on a stuck view or abrupt scene change, but not on arrival or every hazard; end the "
         "chunk before edges and targets. Ask for `observe: keyframes` to inspect a failed "
         "sequence, and use the end frame to adjust timing based on how far you actually moved.",
+        "- **Ledges and narrow surfaces** (shelves, beams, box tops): movement is relative to "
+        "the camera, and moving sideways (left, right, or `heading` beyond about 30 degrees) "
+        "makes the camera swing to follow you, which curves your path toward the camera and "
+        "off the near edge. To go along a ledge: first `look` (alone, `look_speed` 0.3 for "
+        "small turns) until the ledge runs straight away from the camera, check the frame, "
+        "then walk `forward` with `speed` 0.3-0.5 in steps of 300-800 ms. Never strafe along "
+        "a ledge, and never use `keep_moving` on one.",
+        "- **Jumps** need full speed and steering until you land: leave `speed` at 1 on "
+        "jumps, and keep the stick pushed through the airtime (a jump's default `ms`) or "
+        "follow it with a `run` in the same direction. A `wait` or the end of the chunk right "
+        "after a short jump drops you straight down; `act` rejects that. Use `speed` only "
+        "for walking.",
         "- On clear ground, set `keep_moving: true` with a final `run` toward your target so "
         "you keep running while you plan the next chunk (it stops at your next tool call, a "
         "stuck view, a scene cut, or a few seconds). You will be further along than the "
@@ -51,8 +59,9 @@ def developer_instructions(
         "them to do their part of a puzzle, or tell them when you are ready.",
         "",
         "## One task at a time",
-        "- Define your task from what the current frame shows, never from where you assume "
-        "the game is: play may start or resume from any checkpoint. Do this at the start of "
+        "- You decide what to do next yourself; there is no walkthrough. Define your task from "
+        "what the current frame shows, never from where you assume the game is: play may "
+        "start or resume from any checkpoint. Do this at the start of "
         "the session and whenever your task is cleared (after a respawn, checkpoint reload, "
         "or cutscene).",
         "- You always have exactly one current task, set by the `task` field of `act`. Finish "
@@ -101,17 +110,6 @@ def developer_instructions(
         "- You have no shell, filesystem, or network here. Do not ask for approvals; do not try "
         "to run commands. The game tools are your only actuators.",
     ]
-    if steps := walkthrough(chapter):
-        lines += [
-            "",
-            f"## Chapter background: {chapter}",
-            "Background on what happens in this chapter, adapted from a wiki. It is not a "
-            "checklist: play may resume from any checkpoint, so never assume you are at the "
-            "start or that these happen in order from where you are. Use it only to recognize "
-            "where you are and what a marker or object is for. Your task always comes from "
-            "the current frame; if this and the on-screen markers disagree, trust the markers.",
-            *steps,
-        ]
     if extra:
         lines += ["", "## Session notes", *[f"- {e}" for e in extra]]
     return "\n".join(lines)

@@ -161,6 +161,26 @@ _STEP_SCHEMA: dict[str, Any] = {
     "properties": {
         "skill": {"type": "string", "enum": list(SKILLS)},
         "dir": {"type": "string", "enum": list(DIRECTIONS)},
+        "heading": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180,
+            "description": "Exact camera-relative angle instead of dir: 0 forward, 90 right, "
+            "-90 left, 180 back.",
+        },
+        "speed": {
+            "type": "number",
+            "minimum": 0.1,
+            "maximum": 1,
+            "description": "Left-stick push, 1 = full run (default). Lower is slower and "
+            "covers less ground per ms.",
+        },
+        "look_speed": {
+            "type": "number",
+            "minimum": 0.1,
+            "maximum": 1,
+            "description": "look only: camera turn rate, 1 = full (default).",
+        },
         "ms": {
             "type": "integer",
             "minimum": 1,
@@ -211,10 +231,19 @@ positive integers. Omitted fields retain the defaults below.
 
 `dir` is relative to the camera: forward, back, left, right, forward-left, forward-right, \
 back-left, back-right, none. Every skill except wait/raw/skip_cutscene accepts `dir` \
-(steer while doing it).
+(steer while doing it). Instead of `dir` you can give `heading` in degrees (0 forward, \
+90 right, -90 left, 180 back) to aim between those directions, e.g. along a narrow ledge. \
+`speed` (0.1-1, default 1) sets how hard the stick is pushed: distance covered is roughly \
+speed x ms, so on ledges, beams, and near edges walk forward at 0.3-0.5 in short steps. Leave \
+jumps at speed 1. Moving sideways makes the camera swing to follow you and curves your path, \
+so on ledges face along the ledge with `look` first, then walk forward. `look` turns the \
+camera, which changes what forward means for every later step; `look_speed` (0.1-1) makes \
+small camera adjustments. A directional jump/double_jump/jump_dash/dash must keep steering \
+until it lands: its ms must cover the default airtime unless the next step is another \
+directional move (run, jump, dash) or a ground_pound/grapple; otherwise it is rejected.
 
 Skills:
-- run {{dir, ms=500, sprint?, until?}}: move with the left stick.
+- run {{dir|heading, speed=1, ms=500, sprint?, until?}}: move with the left stick.
 - jump {{dir, ms=500, hold_ms=100}}: one jump, including movement after release.
 - double_jump {{dir, ms=850, hold_ms=100, gap_ms=250}}: jump, then jump again in the air.
 - dash {{dir, ms=350, hold_ms=100}}: quick dash (works in the air too).
@@ -223,7 +252,7 @@ Skills:
 - interact {{dir, ms=100, hold_ms?}}: Y. Defaults to holding for ms; set hold_ms for a tap.
 - grapple {{dir, ms=700, hold_ms=100}}: RB, grapple to a rope point in range.
 - ability {{button: LT|RT, dir, ms=300, hold_ms?}}: trigger; defaults to holding for ms.
-- look {{look: left|right|up|down, dir, ms=200}}: turn the camera.
+- look {{look: left|right|up|down, look_speed=1, dir, ms=200}}: turn the camera.
 - locate_partner {{dir, ms=300, hold_ms=100}}: click RS to reveal your partner's location. \
 Use this alone when you lose track of your partner; inspect the returned frame before moving.
 - skip_cutscene {{ms=2000, hold_ms?}}: hold B to skip a visible cutscene, with neutral sticks. \

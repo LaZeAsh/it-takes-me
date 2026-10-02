@@ -14,19 +14,18 @@ locally with exact timing before returning the resulting frame(s).
 When the model loses track of its partner, it can use `locate_partner` in an action chunk to
 click the right stick and reveal the partner's location, then plan its route from the returned frame.
 
-## On-screen markers and walkthroughs
+## On-screen markers and tasks
 
 The prompt tells the model to treat the game's on-screen icons as its task list, in priority
 order: yellow circles on objects (a ring around a white dot, or a `Y` when in range), then
 tutorial prompts such as `X Dash`, then the distant white objective hexagon, and never the
-partner's colored location dot. `CHAPTER` in `run.py` adds that
-chapter's background, adapted from the It Takes Two wiki (`it_takes_me/inference/walkthrough.py`),
-so the model knows what the markers lead to. Set it to `None` to use markers only.
+partner's colored location dot. There is no walkthrough: the model decides what to do next
+from what it sees.
 
 The model works on one task at a time. Every `act` names its `task`; changing it is refused (with
 nothing pressed) unless the call also marks the previous task `done` or `blocked`. Each turn's
 message repeats the current task. The model defines each task from the current frame, since play
-can resume from any checkpoint; the walkthrough is background, not a checklist. A chunk that stops
+can resume from any checkpoint. A chunk that stops
 on a scene cut (respawn, checkpoint reload, cutscene) clears the task so it is defined again.
 
 ## Action timing
@@ -37,6 +36,17 @@ and `jump_dash` accept `gap_ms`, the release time between the two presses. Each 
 `hold_ms`, so the total must cover both holds and the gap. All durations are positive integer
 milliseconds; omitted timings preserve the original skill defaults. `interact`, `ability`, and
 `skip_cutscene` hold for the whole step by default. `press` can tap any controller button.
+
+Movement is camera-relative. Besides the 8 `dir` words, any moving step accepts `heading` (degrees:
+0 forward, 90 right, 180 back) for exact angles and `speed` (0.1-1, default 1) for how hard the
+stick is pushed; `look` accepts `look_speed` for small camera turns. The prompt asks the model to
+walk ledges forward at speed 0.3-0.5 after turning the camera to face along them, because moving
+sideways makes the camera swing and curves the path off the edge. Jumps stay at full speed.
+
+A directional jump, double jump, jump-dash, or dash must keep steering until it lands: if the next
+step is not another directional move (or a ground pound or grapple), its `ms` must cover the skill's
+default airtime, or `act` rejects the chunk before pressing anything. Releasing the stick mid-air
+(a `wait` or the chunk ending right after a short jump) made the character drop short.
 
 `skip_cutscene` holds B with neutral sticks to skip a cutscene. Its default duration is 2,000 ms;
 the model can choose a longer `ms` if needed and inspects the returned frame before moving again.

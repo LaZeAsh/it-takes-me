@@ -254,6 +254,54 @@ class ActionTimingTests(unittest.TestCase):
         tools.dispatch("act", {"task": "t", "intent": "wait", "steps": wait})
         self.assertTrue(tools.dispatch("look_at_screen", {})["success"])
 
+    def test_speed_and_heading_set_the_stick_vector(self) -> None:
+        (seg,) = compile_step({"skill": "run", "dir": "forward", "speed": 0.4, "ms": 500})
+        self.assertEqual(seg.state.left, (0.0, 0.4))
+        (seg,) = compile_step({"skill": "run", "heading": 90, "speed": 0.5, "ms": 500})
+        self.assertAlmostEqual(seg.state.left[0], 0.5)
+        self.assertAlmostEqual(seg.state.left[1], 0.0)
+        (seg,) = compile_step({"skill": "run", "heading": -30, "ms": 500})
+        self.assertAlmostEqual(seg.state.left[0], -0.5)
+        self.assertAlmostEqual(seg.state.left[1], 0.8660254)
+        jump = compile_step({"skill": "jump", "heading": 180, "speed": 0.3})
+        self.assertAlmostEqual(jump[0].state.left[1], -0.3)
+        (look,) = compile_step({"skill": "look", "look": "left", "look_speed": 0.25})
+        self.assertEqual(look.state.right, (-0.25, 0.0))
+
+    def test_invalid_speed_or_heading_is_rejected(self) -> None:
+        for step in (
+            {"skill": "run", "dir": "forward", "speed": 0},
+            {"skill": "run", "dir": "forward", "speed": 1.5},
+            {"skill": "run", "dir": "forward", "speed": True},
+            {"skill": "run", "heading": 200},
+            {"skill": "run", "heading": "left"},
+            {"skill": "run", "dir": "forward", "heading": 10},
+            {"skill": "run", "dir": "forward", "look_speed": 0.5},
+        ):
+            with self.subTest(step=step), self.assertRaises(ValueError):
+                compile_step(step)
+
+    def test_directional_jump_must_steer_until_it_lands(self) -> None:
+        rejected = [
+            [{"skill": "double_jump", "dir": "forward", "ms": 650}],
+            [{"skill": "jump", "dir": "forward", "ms": 250}, {"skill": "wait", "ms": 400}],
+            [{"skill": "dash", "dir": "left", "ms": 150}, {"skill": "wait", "ms": 400}],
+            [{"skill": "jump", "dir": "forward", "ms": 250}, {"skill": "run", "dir": "none"}],
+        ]
+        for steps in rejected:
+            with self.subTest(steps=steps), self.assertRaisesRegex(ValueError, "mid-air"):
+                compile_chunk(steps)
+        allowed = [
+            [{"skill": "double_jump", "dir": "forward"}, {"skill": "wait", "ms": 400}],
+            [{"skill": "jump", "dir": "forward", "ms": 250}] * 4
+            + [{"skill": "run", "dir": "forward", "ms": 300}],
+            [{"skill": "jump", "ms": 200}, {"skill": "wait", "ms": 300}],
+            [{"skill": "jump", "dir": "forward", "ms": 300}, {"skill": "ground_pound"}],
+        ]
+        for steps in allowed:
+            with self.subTest(steps=steps):
+                compile_chunk(steps)
+
     def test_invalid_timing_is_rejected_before_any_input(self) -> None:
         invalid = [{"skill": "run", "ms": value} for value in (0, -1, 100.5, True, "500")] + [
             {"skill": "jump", "ms": 100, "hold_ms": 101},

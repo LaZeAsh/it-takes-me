@@ -91,7 +91,6 @@ def play_session(
                 reasoning_effort=settings.reasoning_effort,
                 character=settings.character,
                 extra_instructions=settings.extra_instructions,
-                chapter=settings.chapter,
             )
             console.print(
                 f"session {session.id} on [bold]{session.model}[/bold] "

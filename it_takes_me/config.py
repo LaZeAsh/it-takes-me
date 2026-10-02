@@ -22,8 +22,6 @@ class Settings:
     runs_dir: Path = Path("runs")
     # Which character the model controls. The human plays the other one.
     character: str = "May"
-    # Chapter whose wiki walkthrough goes in the prompt (see inference/walkthrough.py), or None.
-    chapter: str | None = "The Shed"
     # Per-turn guardrails.
     max_tool_calls_per_turn: int = 8
     max_turns: int | None = None

@@ -1,16 +1,5 @@
-"""Action chunks: the model chooses input durations and we execute them locally.
-
-A chunk is a list of steps. Each step is either a named *skill* (with overridable button and
-movement timings, e.g. `double_jump`) or a *raw* pad segment. Steps compile to `Segment`s — a
-pad state held for some ms — and `play_chunk` replays them against wall-clock deadlines so
-timing inside a chunk never depends on model latency.
-
-Directions are camera-relative words ("forward", "back-left", ...), not stick floats.
-
-`run` and `wait` take `until`: local checks polled during the step (a cheap low-res snapshot,
-~10 Hz) that end it early. `ms` becomes the timeout. When a check fires, the rest of the chunk
-is skipped and the model is told why. Runs longer than three seconds enable these checks
-automatically. They detect a frozen view or abrupt change, not arrival or every obstacle.
+"""
+Action chunks: the model chooses input durations and we execute them locally.
 """
 
 from __future__ import annotations
@@ -122,11 +111,32 @@ class ChunkResult:
     stopped: tuple[int, str] | None = None
 
 
-def _dir(step: dict[str, Any], key: str = "dir") -> tuple[float, float]:
-    word = step.get(key, "none")
-    if word not in DIRECTIONS:
-        raise ValueError(f"unknown direction {word!r}; use one of {sorted(DIRECTIONS)}")
-    return DIRECTIONS[word]
+def _dir(step: dict[str, Any]) -> tuple[float, float]:
+    """Left-stick vector from `dir` or an exact `heading`, scaled by `speed`."""
+    if "heading" in step:
+        if "dir" in step:
+            raise ValueError("use either dir or heading, not both")
+        heading = step["heading"]
+        if isinstance(heading, bool) or not isinstance(heading, int | float):
+            raise ValueError("heading must be a number of degrees (0 forward, 90 right)")
+        if not -180 <= heading <= 180:
+            raise ValueError("heading must be between -180 and 180 degrees")
+        rad = math.radians(heading)
+        x, y = math.sin(rad), math.cos(rad)
+    else:
+        word = step.get("dir", "none")
+        if word not in DIRECTIONS:
+            raise ValueError(f"unknown direction {word!r}; use one of {sorted(DIRECTIONS)}")
+        x, y = DIRECTIONS[word]
+    speed = _fraction(step, "speed")
+    return (x * speed, y * speed)
+
+
+def _fraction(step: dict[str, Any], key: str) -> float:
+    value = step.get(key, 1.0)
+    if isinstance(value, bool) or not isinstance(value, int | float) or not 0.1 <= value <= 1:
+        raise ValueError(f"{key} must be a number from 0.1 to 1")
+    return float(value)
 
 
 def _ms(step: dict[str, Any], default: int) -> int:
@@ -175,6 +185,8 @@ def compile_step(step: dict[str, Any]) -> list[Segment]:
     }
     if "hold_ms" in step and skill not in button_skills:
         raise ValueError("`hold_ms` only works on skills that press a button")
+    if "look_speed" in step and skill != "look":
+        raise ValueError("`look_speed` only works on look")
     if "gap_ms" in step and skill not in ("double_jump", "jump_dash"):
         raise ValueError("`gap_ms` only works on double_jump and jump_dash")
 
@@ -235,7 +247,9 @@ def compile_step(step: dict[str, Any]) -> list[Segment]:
         word = step.get("look", "right")
         if word not in LOOK_DIRECTIONS:
             raise ValueError(f"unknown look direction {word!r}; use one of {list(LOOK_DIRECTIONS)}")
-        return [Segment(_ms(step, 200), PadState(left=left, right=LOOK_DIRECTIONS[word]))]
+        x, y = LOOK_DIRECTIONS[word]
+        turn = _fraction(step, "look_speed")
+        return [Segment(_ms(step, 200), PadState(left=left, right=(x * turn, y * turn)))]
     if skill == "locate_partner":
         return press(LOCATE_PARTNER, TAP_MS + LOCATE_PARTNER_AFTER_MS)
     if skill == "skip_cutscene":
@@ -258,8 +272,45 @@ def compile_step(step: dict[str, Any]) -> list[Segment]:
     raise ValueError(f"unknown skill {skill!r}; use one of {list(SKILLS)}")
 
 
+# Shortest time a directional jump must keep steering when nothing airborne follows it: the
+# skill defaults, which cover the airtime. Releasing the stick earlier drops the character short.
+AIRTIME_MS = {
+    "jump": TAP_MS + JUMP_AIR_MS,
+    "double_jump": 2 * TAP_MS + DOUBLE_JUMP_GAP_MS + JUMP_AIR_MS,
+    "jump_dash": 2 * TAP_MS + DOUBLE_JUMP_GAP_MS + DASH_AFTER_MS,
+    "dash": TAP_MS + DASH_AFTER_MS,
+}
+_KEEPS_STEERING = ("run", "jump", "double_jump", "jump_dash", "dash")
+# Airborne follow-ups that are meant to end horizontal movement (slam down, rope pull).
+_ENDS_JUMP = ("ground_pound", "grapple")
+
+
+def _check_air_steering(steps: list[dict[str, Any]], segments: list[Segment]) -> None:
+    """Reject a directional jump that lets go of the stick before it can land."""
+    moving = {seg.step for seg in segments if seg.state.left != (0.0, 0.0)}
+    for i, step in enumerate(steps):
+        skill = step.get("skill")
+        if skill not in AIRTIME_MS or i not in moving:
+            continue
+        nxt = steps[i + 1] if i + 1 < len(steps) else None
+        if nxt is not None and (
+            nxt.get("skill") in _ENDS_JUMP
+            or (nxt.get("skill") in _KEEPS_STEERING and i + 1 in moving)
+        ):
+            continue
+        if _ms(step, AIRTIME_MS[skill]) < AIRTIME_MS[skill]:
+            what = "the chunk ends" if nxt is None else f"step {i + 1} ({nxt.get('skill')}) stops"
+            raise ValueError(
+                f"step {i} ({skill}) lets go of the stick after {step['ms']} ms because {what} "
+                f"steering, so you drop short mid-air. Give it ms >= "
+                f"{AIRTIME_MS[skill]}, or follow it with a run in the same direction until you "
+                "land. Nothing was pressed."
+            )
+
+
 def compile_chunk(steps: list[dict[str, Any]], max_ms: int = MAX_CHUNK_MS) -> list[Segment]:
     segments = [replace(seg, step=i) for i, step in enumerate(steps) for seg in compile_step(step)]
+    _check_air_steering(steps, segments)
     total = sum(s.ms for s in segments)
     if total > max_ms:
         raise ValueError(f"chunk is {total} ms; keep it under {max_ms} ms and look again")

@@ -1,9 +1,5 @@
-"""Own the virtual Xbox pad for the whole play session.
-
-Start this once and leave it open: it plugs in one controller, shows it on screen (left-click
-and hold buttons, drag the sticks, right-click a stick to click it), and lets `run.py` drive
-it over localhost. Restarting the agent then keeps the same controller, so the game keeps it
-as player 2.  uv run python pad.py
+"""
+Own the virtual Xbox pad for the whole play session.
 """
 
 from __future__ import annotations
