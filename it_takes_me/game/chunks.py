@@ -72,7 +72,7 @@ SKILLS = (
     "press",
     "raw",
 )
-BUTTON_SKILLS = frozenset(SKILLS) - {"run", "look", "raw"}
+BUTTON_SKILLS = frozenset(s for s in SKILLS if s not in ("run", "look", "raw"))
 REPEAT = "repeat"  # a block of steps played `times` in a row; expanded before compiling
 
 
