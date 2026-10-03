@@ -46,7 +46,7 @@ sideways makes the camera swing and curves the path off the edge. Jumps stay at 
 A directional jump, double jump, jump-dash, or dash must keep steering until it lands: if the next
 step is not another directional move (or a ground pound or grapple), its `ms` must cover the skill's
 default airtime, or `act` rejects the chunk before pressing anything. Releasing the stick mid-air
-(a `wait` or the chunk ending right after a short jump) made the character drop short.
+(the chunk ending right after a short jump) made the character drop short.
 
 `skip_cutscene` holds B with neutral sticks to skip a cutscene. Its default duration is 2,000 ms;
 the model can choose a longer `ms` if needed and inspects the returned frame before moving again.
@@ -61,13 +61,41 @@ For a clear stretch of traversal, the model can request a single 7,000 ms run ra
 short runs separated by inference. Runs longer than 3,000 ms automatically check low-resolution
 snapshots locally for a stuck view or abrupt scene change. A check stops the chunk, skips later
 steps, releases the controller, and reports why. These checks cannot detect arrival at a target
-or every hazard, so the model should shorten runs near edges and destinations. The pad releases
-at the end of every chunk unless the model sets `keep_moving` on a chunk that ends with a
-directional `run`. Then that run continues in the background while the model plans, until its next
-tool call or turn, a stuck view, a scene cut, or `CARRY_MAX_MS` (6 s); the next result says how long
-it kept moving. The prompt asks for 4-8 s chunks when travelling, since every call costs seconds of
-planning time standing still. `MAX_CHUNK_MS` in `run.py`
-sets the overall chunk limit.
+or every hazard, so the model should shorten runs near edges and destinations. A `repeat` step
+(`{"skill": "repeat", "times": 5, "steps": [...]}`) plays a block of steps several times in a row,
+for rhythmic sequences such as hopping between two walls. `MAX_CHUNK_MS` in `run.py` sets the
+overall chunk limit, counted after repeats are expanded.
+
+There is no `wait` skill, `run` must have a direction, and `raw` must press something. Steps run
+back to back like a player who never lets go of the controller, and the model already stands
+still while it plans each call. In recorded runs, waits were mostly whole chunks spent just
+looking (~3.5 s of planning for ~0.3 s of play).
+
+Chunks are **pipelined**. A background pad thread (`PadThread` in `chunks.py`) owns the
+controller. For a chunk at least twice the planning time (~7 s), `act` hands its result back
+about one planning time before the chunk ends: the frame shows that moment and the result says which steps are still to
+play. The model plans its next chunk while those steps play, and the next chunk queues and starts
+the instant the current one ends, with no neutral gap. The lead time starts at 3.5 s and follows
+the measured gap between one `act` returning and the next arriving (bounded to 1-6 s). Turns can
+start mid-chunk too: the turn message says how much is left. If a chunk is stopped early by a
+check, any chunk planned before the model saw that is not played (nothing is pressed); the model
+gets the reason and a fresh frame and plans again. Shorter chunks return at the end: an early
+frame from a 1-2 s chunk showed too little, and Sol spent every other call on a `wait` to look.
+The model cannot ask to wait for the end (it chose that on every call, which turned pipelining
+off); only `observe: "keyframes"`, for diagnosing failures, waits for the end of a long chunk.
+
+When no chunk is queued, the pad releases at the end of a chunk unless the model sets
+`keep_moving` on a chunk that ends with a directional `run`. Then that run continues until the
+next chunk starts, a stuck view, a scene cut, or `CARRY_MAX_MS` (6 s); the next result says how long
+it kept moving. Each chunk is logged as a `chunk` event (planned, played, idle and carried ms), and
+`summarize.py` reports the share of time spent moving.
+
+Every model call costs ~3.5 s of standing still, so `act` also discourages calls that play almost
+nothing. A chunk of only camera `look` steps is refused unless it scans with
+`observe: "keyframes"` or carries a line to say, and each result reports the share of time spent
+moving ("stood still 3,300 ms planning, then played 850 ms"). Talking to the partner is the
+optional `say` field of `act`, not a separate tool, so it rides along with a move instead of
+costing its own call.
 
 ## Luna + Jev player (separate technique)
 
@@ -112,7 +140,9 @@ Every session is recorded to `runs/<timestamp>/` (frames + `events.jsonl`).
 
 Model observations are cropped to the controlled character's half and resized separately from the
 recording. `frames/` contains the original full-resolution captures; `observations/` contains the
-exact JPEGs sent to the model. Navigation uses a 512 px observation by default. The
+exact JPEGs sent to the model. The model's JPEG is made straight from the screen grab, and the
+full-resolution PNG is written on a background thread: encoding a 4K PNG first cost ~0.4 s per
+call that the model waited through. Navigation uses a 512 px observation by default. The
 `look_at_screen` tool only returns a 1,536 px high-detail observation for small prompts or objects,
 at most once between actions; turns and `act` already return fresh navigation frames.
 

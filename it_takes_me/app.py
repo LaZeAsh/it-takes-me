@@ -64,6 +64,7 @@ def play_session(
         on_say=lambda text: console.print(
             f"[bold magenta]{settings.character}:[/bold magenta] {text}"
         ),
+        on_chunk=lambda info: recorder.event("chunk", **info),
         max_calls_per_turn=settings.max_tool_calls_per_turn,
         instant_actions=instant_actions,
     )

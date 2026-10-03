@@ -30,7 +30,6 @@ SKILLS: dict[str, str] = {
     "which way every later direction points.",
     "locate_partner": "Reveal where the partner is on screen.",
     "skip_cutscene": "Hold B to skip a cutscene.",
-    "wait": "Stand still for `duration`.",
 }
 
 DIRECTIONS: dict[str, str] = {
@@ -73,7 +72,7 @@ TRIGGERS: dict[str, str] = {"LT": "Left trigger.", "RT": "Right trigger."}
 # Skills whose step takes a movement direction.
 STEERED = {"run", "jump", "double_jump", "dash", "jump_dash", "ground_pound"}
 # Skills whose length is Jev's chosen duration (runs are sized by distance; others use defaults).
-_TIMED = {"wait", "interact", "ability", "look"}
+_TIMED = {"interact", "ability", "look"}
 # Run length from Luna's distance to the goal. Jev's duration answers anchored on its own
 # history (300 ms every step), so runs are sized from the scene instead.
 RUN_MS_BY_DISTANCE = {"touching": 300, "near": 800, "mid": 1800, "far": 3500}
@@ -89,7 +88,7 @@ SKIP_CUTSCENE_MIN_MS = 2000
 def available_skills(scene: Scene) -> dict[str, str]:
     """Sol's skills minus the ones that cannot do anything in this scene."""
     if scene.scene == "cutscene":
-        return {skill: SKILLS[skill] for skill in ("skip_cutscene", "wait")}
+        return {"skip_cutscene": SKILLS["skip_cutscene"]}
     skills = {skill: text for skill, text in SKILLS.items() if skill != "skip_cutscene"}
     in_reach = any(
         thing.kind in _PROMPTS and thing.distance in ("touching", "near") for thing in scene.things
@@ -123,7 +122,7 @@ def action_questions(skills: dict[str, str] = SKILLS) -> dict[str, Any]:
         },
         "duration": {
             "type": "choice",
-            "instructions": "How long should the input last? Used by wait, interact, ability, "
+            "instructions": "How long should the input last? Used by interact, ability, "
             "and look. Runs are sized from the goal's distance; jumps and dashes use their own "
             "airtime unless this is longer.",
             "criteria": {key: f"{ms} ms: {text}" for key, (ms, text) in DURATIONS.items()},
@@ -165,6 +164,9 @@ def build_step(choice: ActionChoice, *, run_ms: int) -> dict[str, Any]:
     step: dict[str, Any] = {"skill": skill}
     if skill in STEERED:
         step["dir"] = choice.dir
+    if skill == "run" and choice.dir == "none":
+        # Runs must move (there is no standing still); "none" means no preference.
+        step["dir"] = "forward"
     if skill == "run":
         step["speed"] = SPEEDS[choice.speed][0]
         step["ms"] = run_ms

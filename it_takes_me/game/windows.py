@@ -57,6 +57,9 @@ class ScreenCapture:
         self._grab().save(buf, format="PNG")
         return buf.getvalue()
 
+    def capture_image(self) -> Image.Image:
+        return self._grab()
+
     def snapshot(self, size: tuple[int, int]) -> Image.Image:
         return self._grab().convert("L").resize(size, Image.Resampling.BILINEAR, reducing_gap=2.0)
 

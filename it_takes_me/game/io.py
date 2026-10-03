@@ -7,6 +7,7 @@ PC, or something else later.
 
 from __future__ import annotations
 
+import io
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, Protocol
@@ -66,3 +67,19 @@ class GameIO(Protocol):
     def set_pad(self, state: PadState) -> None: ...
 
     def close(self) -> None: ...
+
+
+def grab(game: GameIO) -> Image:
+    """The current frame as an RGB image.
+
+    Backends that can hand over the screen directly implement `capture_image()`; that skips
+    encoding a full-resolution PNG (~0.4 s at 4K) only to decode it again for the model. Others
+    fall back to decoding `capture()`.
+    """
+    capture_image = getattr(game, "capture_image", None)
+    if capture_image is not None:
+        return capture_image()
+    from PIL import Image as PILImage
+
+    with PILImage.open(io.BytesIO(game.capture())) as image:
+        return image.convert("RGB")

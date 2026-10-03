@@ -26,6 +26,7 @@ def main() -> None:
     table.add_column("tokens")
     table.add_column("tok/act")
     table.add_column("errors")
+    table.add_column("moving")
     for path in paths:
         summary = summarize_run(path)
         table.add_row(
@@ -41,6 +42,7 @@ def main() -> None:
             str(summary.total_tokens),
             str(summary.tokens_per_act),
             str(summary.errors),
+            f"{summary.moving_share:.0%}",
         )
     Console(width=160).print(table)
 

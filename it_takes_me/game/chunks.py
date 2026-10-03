@@ -5,14 +5,16 @@ Action chunks: the model chooses input durations and we execute them locally.
 from __future__ import annotations
 
 import math
+import queue
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
 from PIL import ImageChops, ImageStat
 
-from .io import NEUTRAL, Button, GameIO, PadState
+from .io import NEUTRAL, Button, GameIO, PadState, grab
 
 if TYPE_CHECKING:
     from PIL.Image import Image
@@ -76,6 +78,11 @@ LOOK_DIRECTIONS: dict[str, tuple[float, float]] = {
     "down": (0.0, -1.0),
 }
 
+# There is no `wait`: steps already run back to back, and the model's planning time between
+# calls stands the character still anyway. In recorded runs, waits were either a whole chunk
+# spent just looking (~3.5 s of planning for ~0.3 s of play) or a pause to land between jumps,
+# which giving the jump enough `ms` already covers. `run` must move and `raw` must press
+# something for the same reason.
 SKILLS = (
     "run",
     "jump",
@@ -90,9 +97,14 @@ SKILLS = (
     "locate_partner",
     "skip_cutscene",
     "press",
-    "wait",
     "raw",
 )
+REPEAT = "repeat"  # a block of steps played `times` in a row; expanded before compiling
+MAX_REPEAT = 20
+# A chunk is only handed back early if that point is at least this far through it. Earlier, the
+# frame barely differs from the one the model planned from: in a live run, 300 ms frames from
+# 1-2 s chunks left Sol blind, and it spent every other call standing still just to look.
+MIN_RELEASE_FRACTION = 0.5
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,7 +118,7 @@ class Segment:
 @dataclass(slots=True)
 class ChunkResult:
     elapsed_ms: int
-    shots: list[tuple[int, bytes]] = field(default_factory=list)
+    shots: list[tuple[int, Image]] = field(default_factory=list)
     # (step index, condition) when an `until` check ended the chunk early.
     stopped: tuple[int, str] | None = None
 
@@ -168,8 +180,8 @@ def compile_step(step: dict[str, Any]) -> list[Segment]:
     skill = step.get("skill")
     left = _dir(step)
     moving = PadState(left=left)
-    if "until" in step and skill not in ("run", "wait"):
-        raise ValueError("`until` only works on run and wait")
+    if "until" in step and skill != "run":
+        raise ValueError("`until` only works on run")
     button_skills = {
         "jump",
         "double_jump",
@@ -218,11 +230,16 @@ def compile_step(step: dict[str, Any]) -> list[Segment]:
         return segments
 
     if skill == "run":
+        if left == (0.0, 0.0):
+            raise ValueError(
+                "run needs a direction (dir or heading): there is no standing still. Start your "
+                "next move straight away instead."
+            )
         buttons = frozenset({SPRINT}) if step.get("sprint") else frozenset()
-        until = _until(step, CONDITIONS if left != (0.0, 0.0) else ("cut",))
+        until = _until(step, CONDITIONS)
         ms = _ms(step, 500)
         if ms > AUTO_WATCH_RUN_MS:
-            until |= frozenset(CONDITIONS if left != (0.0, 0.0) else ("cut",))
+            until |= frozenset(CONDITIONS)
         return [Segment(ms, PadState(left=left, buttons=buttons), until)]
     if skill == "jump":
         return press(JUMP, TAP_MS + JUMP_AIR_MS)
@@ -260,14 +277,14 @@ def compile_step(step: dict[str, Any]) -> list[Segment]:
         if "button" not in step:
             raise ValueError("press requires a button")
         return press(Button(step["button"]), TAP_MS)
-    if skill == "wait":
-        return [Segment(_ms(step, 500), NEUTRAL, _until(step, ("cut",)))]
     if skill == "raw":
         state = PadState(
             left=_vec(step.get("left")),
             right=_vec(step.get("right")),
             buttons=frozenset(Button(b) for b in step.get("buttons", [])),
         )
+        if state == NEUTRAL:
+            raise ValueError("raw must press or push something: there is no standing still")
         return [Segment(_ms(step, 100), state)]
     raise ValueError(f"unknown skill {skill!r}; use one of {list(SKILLS)}")
 
@@ -285,7 +302,9 @@ _KEEPS_STEERING = ("run", "jump", "double_jump", "jump_dash", "dash")
 _ENDS_JUMP = ("ground_pound", "grapple")
 
 
-def _check_air_steering(steps: list[dict[str, Any]], segments: list[Segment]) -> None:
+def _check_air_steering(
+    steps: list[dict[str, Any]], segments: list[Segment], labels: list[str]
+) -> None:
     """Reject a directional jump that lets go of the stick before it can land."""
     moving = {seg.step for seg in segments if seg.state.left != (0.0, 0.0)}
     for i, step in enumerate(steps):
@@ -299,22 +318,67 @@ def _check_air_steering(steps: list[dict[str, Any]], segments: list[Segment]) ->
         ):
             continue
         if _ms(step, AIRTIME_MS[skill]) < AIRTIME_MS[skill]:
-            what = "the chunk ends" if nxt is None else f"step {i + 1} ({nxt.get('skill')}) stops"
+            what = "the chunk ends"
+            if nxt is not None:
+                what = f"step {labels[i + 1]} ({nxt.get('skill')}) stops"
             raise ValueError(
-                f"step {i} ({skill}) lets go of the stick after {step['ms']} ms because {what} "
-                f"steering, so you drop short mid-air. Give it ms >= "
+                f"step {labels[i]} ({skill}) lets go of the stick after {step['ms']} ms because "
+                f"{what} steering, so you drop short mid-air. Give it ms >= "
                 f"{AIRTIME_MS[skill]}, or follow it with a run in the same direction until you "
                 "land. Nothing was pressed."
             )
 
 
+def expand_repeats(steps: list[dict[str, Any]]) -> list[tuple[int, str, dict[str, Any]]]:
+    """Flatten `repeat` blocks into (top-level index, label, step) in play order."""
+    flat: list[tuple[int, str, dict[str, Any]]] = []
+    for i, step in enumerate(steps):
+        if step.get("skill") != REPEAT:
+            if "times" in step or "steps" in step:
+                raise ValueError(f"step {i}: `times` and `steps` only work on repeat")
+            flat.append((i, str(i), step))
+            continue
+        if extra := set(step) - {"skill", "times", "steps"}:
+            raise ValueError(f"step {i}: repeat only takes times and steps, not {sorted(extra)}")
+        times = step.get("times")
+        if isinstance(times, bool) or not isinstance(times, int) or not 2 <= times <= MAX_REPEAT:
+            raise ValueError(f"step {i}: repeat times must be an integer from 2 to {MAX_REPEAT}")
+        inner = step.get("steps")
+        if not isinstance(inner, list) or not inner:
+            raise ValueError(f"step {i}: repeat needs a non-empty list of steps")
+        if any(not isinstance(s, dict) or s.get("skill") == REPEAT for s in inner):
+            raise ValueError(f"step {i}: repeat steps must be plain skills (no nested repeat)")
+        for n in range(times):
+            for j, sub in enumerate(inner):
+                flat.append((i, f"{i}.{j} (repeat {n + 1}/{times})", sub))
+    return flat
+
+
 def compile_chunk(steps: list[dict[str, Any]], max_ms: int = MAX_CHUNK_MS) -> list[Segment]:
-    segments = [replace(seg, step=i) for i, step in enumerate(steps) for seg in compile_step(step)]
-    _check_air_steering(steps, segments)
+    """Compile a chunk; each segment's `step` is the top-level step it came from."""
+    flat = expand_repeats(steps)
+    labels = [label for _, label, _ in flat]
+    segments: list[Segment] = []
+    for k, (_, label, step) in enumerate(flat):
+        try:
+            segments += [replace(seg, step=k) for seg in compile_step(step)]
+        except ValueError as exc:
+            raise ValueError(f"step {label}: {exc}") from exc
+    _check_air_steering([step for _, _, step in flat], segments, labels)
     total = sum(s.ms for s in segments)
     if total > max_ms:
         raise ValueError(f"chunk is {total} ms; keep it under {max_ms} ms and look again")
-    return segments
+    return [replace(seg, step=flat[seg.step][0]) for seg in segments]
+
+
+def release_point(total_ms: int, lead_ms: float) -> int | None:
+    """When to hand a chunk back early so the next one is planned before this one ends.
+
+    None means at the end: the chunk is shorter than about twice the planning time, so an early
+    frame would show too little of it.
+    """
+    release = round(total_ms - lead_ms)
+    return release if release >= total_ms * MIN_RELEASE_FRACTION else None
 
 
 class _Watcher:
@@ -358,9 +422,9 @@ def play_chunk(
     hold_last: bool = False,
 ) -> ChunkResult:
     """Execute segments against wall-clock deadlines. Returns `keyframes` evenly spaced
-    mid-chunk frames as (ms since start, png), and which `until` check stopped the chunk, if
+    mid-chunk frames as (ms since start, image), and which `until` check stopped the chunk, if
     any. The pad is neutral when this returns, except with `hold_last` on a chunk that ran to
-    completion: then the last segment's state stays held for a `Carry` to take over.
+    completion: then the last segment's state stays held for the caller to take over.
 
     Captures happen while the current pad state is held, so they only skew timing if they run
     past the end of the segment they fall in. Keyframe times are planned from the full-length
@@ -373,9 +437,28 @@ def play_chunk(
         finally:
             io.set_pad(NEUTRAL)
         return ChunkResult(elapsed_ms=0)
+    return _play(io, segments, keyframes, half, hold_last=hold_last)
 
+
+def _play(
+    io: GameIO,
+    segments: list[Segment],
+    keyframes: int,
+    half: str,
+    *,
+    hold_last: bool,
+    halt: threading.Event | None = None,
+    release_ms: int | None = None,
+    on_release: Callable[[int, Image], None] | None = None,
+) -> ChunkResult:
+    """The deadline loop behind `play_chunk` and `PadThread`.
+
+    At `release_ms` into the chunk it captures a frame and hands it to `on_release` while play
+    continues. A set `halt` ends the chunk at the next wake-up, reported as condition "halt".
+    """
     total = sum(s.ms for s in segments)
     shot_times = [total * (i + 1) / (keyframes + 1) for i in range(keyframes)] if total else []
+    release = release_ms if on_release is not None else None
     result = ChunkResult(elapsed_ms=0)
     start = time.monotonic()
 
@@ -390,15 +473,25 @@ def play_chunk(
             deadline += seg.ms
             watcher = _Watcher(io, seg.until, half, elapsed_ms()) if seg.until else None
             while (now := elapsed_ms()) < deadline:
+                if release is not None and release <= now:
+                    release = None
+                    assert on_release is not None
+                    on_release(round(now), grab(io))
+                    continue
                 wake = min(
                     deadline,
                     shot_times[0] if shot_times else deadline,
                     watcher.next_ms if watcher else deadline,
+                    release if release is not None else deadline,
+                    now + CHECK_EVERY_MS if halt is not None else deadline,
                 )
                 time.sleep(max(0.0, wake - now) / 1000)
+                if halt is not None and halt.is_set():
+                    result.stopped = (seg.step, "halt")
+                    return result
                 if shot_times and shot_times[0] <= elapsed_ms():
                     shot_times.pop(0)
-                    result.shots.append((round(elapsed_ms()), io.capture()))
+                    result.shots.append((round(elapsed_ms()), grab(io)))
                 if watcher and watcher.next_ms <= elapsed_ms():
                     fired = watcher.check(elapsed_ms())
                     if fired:
@@ -412,44 +505,225 @@ def play_chunk(
     return result
 
 
-class Carry:
-    """Keeps a run going after its chunk ends, so the character moves while the model plans.
+@dataclass(eq=False)
+class Job:
+    """One chunk queued on a `PadThread`. Fields after `epoch` are written by the pad thread."""
 
-    A background thread holds `state` and stops on the same stuck/cut checks as long runs, or
-    after `max_ms`. Nothing else may use `io` until `stop()` returns; the pad is neutral then.
+    segments: list[Segment]
+    keyframes: int = 0
+    # Chunk time at which to hand back a frame while play continues; None = at the end.
+    release_ms: int | None = None
+    capture: bool = True
+    # After a completed chunk, keep holding its last state until the next job or a check.
+    keep_moving: bool = False
+    # `PadThread.epoch` the model had seen when it planned this job; a mismatch cancels it.
+    epoch: int = 0
+    status: str = "queued"  # queued, playing, done, stopped, cancelled, error
+    result: ChunkResult | None = None
+    frame: Image | None = None
+    frame_ms: int | None = None  # chunk time of `frame`; None = taken after the chunk
+    frame_epoch: int = 0
+    idle_ms: int = 0  # neutral pad time between the previous job and this one
+    carrying: bool = False
+    carry_ms: int = 0
+    carry_reason: str | None = None
+    error: BaseException | None = None
+    started: float | None = None  # time.monotonic() when play began
+    # Set once `frame` (or the final outcome) is available.
+    ready: threading.Event = field(default_factory=threading.Event)
+    # Set once the job and any carry after it are over.
+    over: threading.Event = field(default_factory=threading.Event)
+
+    @property
+    def total_ms(self) -> int:
+        return sum(s.ms for s in self.segments)
+
+    def remaining_from(self, t_ms: int) -> tuple[int, int]:
+        """(top-level step playing at `t_ms`, ms of the chunk left after it)."""
+        end = 0
+        for seg in self.segments:
+            end += seg.ms
+            if end > t_ms:
+                return seg.step, self.total_ms - t_ms
+        return self.segments[-1].step, 0
+
+
+class PadThread:
+    """Owns the pad on a background thread and plays queued jobs back to back.
+
+    A job queued while another plays starts the moment that one ends, with no neutral gap.
+    When a job is stopped early by a check (or errors), `epoch` goes up, and every job planned
+    before that (a lower `Job.epoch`) is cancelled without pressing anything: it assumed the
+    stopped chunk would finish. A completed `keep_moving` job keeps its last state held, with
+    the stuck/cut checks of long runs, until the next job, a check, or `carry_max_ms`.
     """
 
     def __init__(
-        self, io: GameIO, state: PadState, half: str = "left", max_ms: int = CARRY_MAX_MS
+        self,
+        io: GameIO,
+        half: str = "left",
+        *,
+        instant: bool = False,
+        carry_max_ms: int = CARRY_MAX_MS,
+        autostart: bool = True,
     ) -> None:
-        self.io, self.half, self.max_ms = io, half, max_ms
-        self.reason: str | None = None
-        self.elapsed_ms = 0
+        self.io, self.half, self.instant, self.carry_max_ms = io, half, instant, carry_max_ms
+        self.epoch = 0
+        self._carry_watcher: _Watcher | None = None
+        self._queue: queue.Queue[Job | None] = queue.Queue()
         self._halt = threading.Event()
-        self._start = time.monotonic()
-        io.set_pad(state)
-        self._thread = threading.Thread(target=self._run, daemon=True, name="carry")
+        self._thread = threading.Thread(target=self._run, daemon=True, name="pad")
+        if autostart:
+            self.start()
+
+    def start(self) -> None:
         self._thread.start()
 
+    def submit(self, job: Job) -> Job:
+        if self._halt.is_set():
+            self._cancel(job)
+        else:
+            self._queue.put(job)
+        return job
+
+    def stop(self) -> None:
+        """Halt whatever is playing, cancel the queue, and leave the pad neutral."""
+        self._halt.set()
+        self._queue.put(None)
+        if self._thread.is_alive():
+            self._thread.join()
+        elif not self._thread.ident:
+            self._drain()
+
+    # -- pad thread ----------------------------------------------------------------------------
+
     def _run(self) -> None:
+        carrying: Job | None = None
+        neutral_since = time.monotonic()
         try:
-            watcher = _Watcher(self.io, frozenset(CONDITIONS), self.half, 0.0)
-            while not self._halt.wait(CHECK_EVERY_MS / 1000):
-                now = (time.monotonic() - self._start) * 1000
-                if now >= self.max_ms:
-                    self.reason = "limit"
-                    return
-                if fired := watcher.check(now):
-                    self.reason = fired
-                    return
-        except Exception:  # noqa: BLE001 - a failed snapshot just ends the carry
-            self.reason = "error"
+            while True:
+                job: Job | None = None
+                if carrying is not None:
+                    job = self._carry(carrying)
+                    if job is None:
+                        self.io.set_pad(NEUTRAL)
+                        neutral_since = time.monotonic()
+                    self._end_carry(carrying)
+                    carrying = None
+                if job is None:
+                    job = self._queue.get()
+                    if job is None or self._halt.is_set():
+                        self._cancel(job)
+                        return
+                    job.idle_ms = round((time.monotonic() - neutral_since) * 1000)
+                if job.epoch != self.epoch:
+                    self._cancel(job)
+                    continue
+                self._play_job(job)
+                neutral_since = time.monotonic()
+                if job.carrying:
+                    carrying = job
+                else:
+                    job.over.set()
         finally:
             self.io.set_pad(NEUTRAL)
-            self.elapsed_ms = round((time.monotonic() - self._start) * 1000)
+            if carrying is not None:
+                self._end_carry(carrying)
+            self._drain()
 
-    def stop(self) -> tuple[int, str]:
-        """Release the pad and return (ms carried, why it ended)."""
-        self._halt.set()
-        self._thread.join()
-        return self.elapsed_ms, self.reason or "next decision"
+    def _play_job(self, job: Job) -> None:
+        job.status, job.started = "playing", time.monotonic()
+
+        def release(t: int, png: Image) -> None:
+            job.frame, job.frame_ms, job.frame_epoch = png, t, self.epoch
+            job.ready.set()
+
+        try:
+            if self.instant:
+                job.result = play_chunk(self.io, job.segments, instant=True)
+            else:
+                job.result = _play(
+                    self.io,
+                    job.segments,
+                    job.keyframes,
+                    self.half,
+                    hold_last=True,
+                    halt=self._halt,
+                    release_ms=job.release_ms if job.capture else None,
+                    on_release=release,
+                )
+            if job.result.stopped is not None:
+                self.epoch += 1
+                job.status = "stopped"
+            else:
+                job.status = "done"
+                job.carrying = job.keep_moving and not self.instant
+                if job.carrying:
+                    # First snapshot before the caller hears back, so the carry compares
+                    # against the end of the chunk.
+                    self._carry_watcher = _Watcher(self.io, frozenset(CONDITIONS), self.half, 0.0)
+                elif self._queue.empty():
+                    self.io.set_pad(NEUTRAL)
+            if not job.ready.is_set():
+                if job.capture:
+                    job.frame = grab(self.io)
+                job.frame_epoch = self.epoch
+        except Exception as exc:  # noqa: BLE001 - handed to the caller waiting on the job
+            self.io.set_pad(NEUTRAL)
+            self.epoch += 1
+            job.status, job.error, job.carrying = "error", exc, False
+            job.frame_epoch = self.epoch
+        finally:
+            job.ready.set()
+
+    def _carry(self, job: Job) -> Job | None:
+        """Hold `job`'s last state until the next job arrives (returned) or a check ends it."""
+        start = time.monotonic()
+        watcher, self._carry_watcher = self._carry_watcher, None
+        try:
+            if watcher is None:
+                watcher = _Watcher(self.io, frozenset(CONDITIONS), self.half, 0.0)
+            while True:
+                try:
+                    nxt = self._queue.get(timeout=CHECK_EVERY_MS / 1000)
+                except queue.Empty:
+                    nxt = False
+                now = (time.monotonic() - start) * 1000
+                job.carry_ms = round(now)
+                if nxt is None or self._halt.is_set():
+                    self._queue.put(nxt)  # let `_run` see the shutdown or cancel the job
+                    job.carry_reason = "stopped"
+                    return None
+                if nxt is not False:
+                    job.carry_reason = "next chunk"
+                    return nxt
+                if now >= self.carry_max_ms:
+                    job.carry_reason = "limit"
+                    return None
+                if fired := watcher.check(now):
+                    if fired == "cut":
+                        self.epoch += 1
+                    job.carry_reason = fired
+                    return None
+        except Exception:  # noqa: BLE001 - a failed snapshot just ends the carry
+            job.carry_reason = "error"
+            return None
+
+    def _end_carry(self, job: Job) -> None:
+        job.carrying = False
+        job.carry_reason = job.carry_reason or "stopped"
+        job.over.set()
+
+    def _drain(self) -> None:
+        while True:
+            try:
+                self._cancel(self._queue.get_nowait())
+            except queue.Empty:
+                return
+
+    def _cancel(self, job: Job | None) -> None:
+        if job is not None:
+            job.status = "cancelled"
+            job.frame_epoch = self.epoch
+            job.ready.set()
+            job.over.set()

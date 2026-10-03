@@ -8,7 +8,8 @@ from pathlib import Path
 from it_takes_me.game.chunks import MAX_CHUNK_MS
 from it_takes_me.vision import FrameDetail, ScreenHalf
 
-DEFAULT_MODEL = "gpt-6.1-sol"
+# DEFAULT_MODEL = "gpt-6.1-sol"
+DEFAULT_MODEL = "gpt-6-astra"
 DEFAULT_REASONING_EFFORT = "low"
 
 
@@ -23,7 +24,7 @@ class Settings:
     # Which character the model controls. The human plays the other one.
     character: str = "May"
     # Per-turn guardrails.
-    max_tool_calls_per_turn: int = 8
+    max_tool_calls_per_turn: int = 30
     max_turns: int | None = None
     frame_after_action: bool = True
     # Model-facing observations are cropped to the controlled half and resized. Full-resolution

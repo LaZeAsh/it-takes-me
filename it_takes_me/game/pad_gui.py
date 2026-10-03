@@ -16,7 +16,7 @@ import threading
 import tkinter as tk
 from typing import TYPE_CHECKING
 
-from .io import NEUTRAL, Button, GameIO, PadState
+from .io import NEUTRAL, Button, GameIO, PadState, grab
 
 if TYPE_CHECKING:
     from PIL.Image import Image
@@ -33,6 +33,9 @@ class PadMixer:
 
     def capture(self) -> bytes:
         return self._inner.capture()
+
+    def capture_image(self) -> Image:
+        return grab(self._inner)
 
     def snapshot(self, size: tuple[int, int]) -> Image:
         return self._inner.snapshot(size)

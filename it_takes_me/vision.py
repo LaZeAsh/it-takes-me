@@ -30,15 +30,19 @@ class ModelFrameEncoder:
     high_max_px: int = 1536
     jpeg_quality: int = 85
 
-    def encode(self, png: bytes, *, detail: FrameDetail = "low") -> ModelFrame:
+    def encode(self, frame: bytes | Image.Image, *, detail: FrameDetail = "low") -> ModelFrame:
+        """Encode a capture (PNG bytes, or an image straight from the screen) for the model."""
         if detail not in ("low", "high"):
             raise ValueError(f"unknown frame detail: {detail}")
         max_px = self.low_max_px if detail == "low" else self.high_max_px
         if max_px <= 0:
             raise ValueError("model frame maximum size must be positive")
 
-        with Image.open(io.BytesIO(png)) as source:
-            rgb = source.convert("RGB")
+        if isinstance(frame, Image.Image):
+            rgb = frame if frame.mode == "RGB" else frame.convert("RGB")
+        else:
+            with Image.open(io.BytesIO(frame)) as source:
+                rgb = source.convert("RGB")
         split = rgb.width // 2
         box = (
             (0, 0, split, rgb.height) if self.half == "left" else (split, 0, rgb.width, rgb.height)

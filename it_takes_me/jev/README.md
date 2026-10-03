@@ -27,7 +27,8 @@ Sessions are recorded to `runs/jev/<timestamp>/`.
    it answers typed questions:
    - `skill`: one of Sol's skills (`run`, `jump`, `double_jump`, `dash`, `jump_dash`,
      `ground_pound`, `interact`, `grapple`, `ability`, `look`, `locate_partner`,
-     `skip_cutscene`, `wait`). `raw` and `press` are left out: they need free-form input.
+     `skip_cutscene`). `raw` and `press` are left out: they need free-form input. There is
+     no `wait`, and a `run` with direction `none` runs forward.
    - `dir`, `duration` (150 ms to 4 s), `speed` (walk/jog/run), `look`, `trigger`: the skill's
      fields as fixed options. Only the fields the chosen skill uses are applied.
    - `goal`: which thing Luna described to work toward (or explore); `task_done`,

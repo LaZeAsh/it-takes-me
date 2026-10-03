@@ -34,7 +34,7 @@ MONITOR = 1  # mss monitor index the game is on (1 = primary)
 SHOW_PAD = True  # on-screen controller when run.py owns the pad (pad.py shows its own)
 
 MAX_TURNS: int | None = None
-MAX_TOOL_CALLS_PER_TURN = 8
+MAX_TOOL_CALLS_PER_TURN = 30  # each new turn costs ~8 s standing still
 FRAME_AFTER_ACTION = True
 MODEL_FRAME_DETAIL: FrameDetail = "low"  # high is for small prompts/details
 MODEL_FRAME_LOW_MAX_PX = 512

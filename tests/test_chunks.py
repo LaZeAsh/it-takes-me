@@ -46,6 +46,10 @@ class FakeGame:
         pass
 
 
+# Fields that make `run` and `raw` do something: neither may stand still.
+MOVING: dict[str, dict] = {"run": {"dir": "forward"}, "raw": {"buttons": ["A"]}}
+
+
 class ActionTimingTests(unittest.TestCase):
     def setUp(self) -> None:
         self.clock = Clock()
@@ -105,12 +109,12 @@ class ActionTimingTests(unittest.TestCase):
             "ability": 300,
             "look": 200,
             "locate_partner": 300,
-            "wait": 500,
             "raw": 100,
         }
         for skill, total in totals.items():
             with self.subTest(skill=skill):
-                self.assertEqual(sum(s.ms for s in compile_step({"skill": skill})), total)
+                step = {"skill": skill, **MOVING.get(skill, {})}
+                self.assertEqual(sum(s.ms for s in compile_step(step)), total)
 
     def test_all_skills_honor_total_duration(self) -> None:
         skills = [
@@ -125,13 +129,16 @@ class ActionTimingTests(unittest.TestCase):
             "ability",
             "look",
             "locate_partner",
-            "wait",
             "raw",
         ]
         for skill in skills:
             with self.subTest(skill=skill):
                 self.assertEqual(
-                    sum(s.ms for s in compile_step({"skill": skill, "ms": 1500})), 1500
+                    sum(
+                        s.ms
+                        for s in compile_step({"skill": skill, "ms": 1500, **MOVING.get(skill, {})})
+                    ),
+                    1500,
                 )
         interact = compile_step({"skill": "interact", "ms": 1500})
         self.assertEqual(len(interact), 1)
@@ -172,10 +179,10 @@ class ActionTimingTests(unittest.TestCase):
 
     def test_task_switch_requires_closing_the_current_task(self) -> None:
         tools = build_game_tools(self.io, frame_after_action=False)
-        wait = [{"skill": "wait", "ms": 100}]
+        step = [{"skill": "run", "dir": "forward", "ms": 100}]
 
         def act(**fields: object) -> dict:
-            return tools.dispatch("act", {"intent": "step", "steps": wait, **fields})
+            return tools.dispatch("act", {"intent": "step", "steps": step, **fields})
 
         self.assertFalse(act()["success"])
         self.assertTrue(act(task="pull the lever")["success"])
@@ -191,15 +198,15 @@ class ActionTimingTests(unittest.TestCase):
 
     def test_scene_cut_clears_the_current_task(self) -> None:
         tools = build_game_tools(self.io, frame_after_action=False)
-        wait = [{"skill": "wait", "ms": 100}]
-        tools.dispatch("act", {"task": "pull the lever", "intent": "step", "steps": wait})
+        step = [{"skill": "run", "dir": "forward", "ms": 100}]
+        tools.dispatch("act", {"task": "pull the lever", "intent": "step", "steps": step})
         self.io.snapshot_fn = lambda size, n: Image.new("L", size, 0 if n == 1 else 255)
         run = [{"skill": "run", "dir": "forward", "ms": 7000}]
         response = tools.dispatch("act", {"task": "pull the lever", "intent": "go", "steps": run})
         self.assertIn("task cleared", response["contentItems"][1]["text"])
         self.assertIsNone(tools.current_task)
         self.assertTrue(
-            tools.dispatch("act", {"task": "chase the fuse", "intent": "go", "steps": wait})[
+            tools.dispatch("act", {"task": "chase the fuse", "intent": "go", "steps": step})[
                 "success"
             ]
         )
@@ -215,8 +222,8 @@ class ActionTimingTests(unittest.TestCase):
         self.assertEqual(self.io.inputs[-1][1], held)
         self.assertNotIn(NEUTRAL, [state for _, state in self.io.inputs])
 
-        wait = [{"skill": "wait", "ms": 100}]
-        response = tools.dispatch("act", {"task": "t", "intent": "stop", "steps": wait})
+        step = [{"skill": "run", "dir": "forward", "ms": 100}]
+        response = tools.dispatch("act", {"task": "t", "intent": "stop", "steps": step})
         texts = [item["text"] for item in response["contentItems"] if item["type"] == "inputText"]
         self.assertIn("You kept moving", texts[0])
         self.assertEqual(self.io.inputs[-1][1], NEUTRAL)
@@ -250,9 +257,22 @@ class ActionTimingTests(unittest.TestCase):
         tools = build_game_tools(self.io, frame_after_action=False)
         self.assertTrue(tools.dispatch("look_at_screen", {})["success"])
         self.assertFalse(tools.dispatch("look_at_screen", {})["success"])
-        wait = [{"skill": "wait", "ms": 100}]
-        tools.dispatch("act", {"task": "t", "intent": "wait", "steps": wait})
+        step = [{"skill": "run", "dir": "forward", "ms": 100}]
+        tools.dispatch("act", {"task": "t", "intent": "wait", "steps": step})
         self.assertTrue(tools.dispatch("look_at_screen", {})["success"])
+
+    def test_nothing_stands_still(self) -> None:
+        for step in (
+            {"skill": "wait", "ms": 500},
+            {"skill": "run", "ms": 500},
+            {"skill": "run", "dir": "none", "ms": 500},
+            {"skill": "raw", "ms": 500},
+            {"skill": "raw", "ms": 500, "left": [0, 0], "buttons": []},
+            {"skill": "look", "look": "left", "until": ["cut"]},
+        ):
+            with self.subTest(step=step), self.assertRaises(ValueError):
+                compile_step(step)
+        compile_step({"skill": "raw", "ms": 500, "right": [0.5, 0]})
 
     def test_speed_and_heading_set_the_stick_vector(self) -> None:
         (seg,) = compile_step({"skill": "run", "dir": "forward", "speed": 0.4, "ms": 500})
@@ -284,18 +304,26 @@ class ActionTimingTests(unittest.TestCase):
     def test_directional_jump_must_steer_until_it_lands(self) -> None:
         rejected = [
             [{"skill": "double_jump", "dir": "forward", "ms": 650}],
-            [{"skill": "jump", "dir": "forward", "ms": 250}, {"skill": "wait", "ms": 400}],
-            [{"skill": "dash", "dir": "left", "ms": 150}, {"skill": "wait", "ms": 400}],
-            [{"skill": "jump", "dir": "forward", "ms": 250}, {"skill": "run", "dir": "none"}],
+            [
+                {"skill": "jump", "dir": "forward", "ms": 250},
+                {"skill": "look", "look": "left", "ms": 400},
+            ],
+            [
+                {"skill": "dash", "dir": "left", "ms": 150},
+                {"skill": "look", "look": "left", "ms": 400},
+            ],
         ]
         for steps in rejected:
             with self.subTest(steps=steps), self.assertRaisesRegex(ValueError, "mid-air"):
                 compile_chunk(steps)
         allowed = [
-            [{"skill": "double_jump", "dir": "forward"}, {"skill": "wait", "ms": 400}],
+            [
+                {"skill": "double_jump", "dir": "forward"},
+                {"skill": "look", "look": "left", "ms": 400},
+            ],
             [{"skill": "jump", "dir": "forward", "ms": 250}] * 4
             + [{"skill": "run", "dir": "forward", "ms": 300}],
-            [{"skill": "jump", "ms": 200}, {"skill": "wait", "ms": 300}],
+            [{"skill": "jump", "ms": 200}, {"skill": "look", "look": "left", "ms": 300}],
             [{"skill": "jump", "dir": "forward", "ms": 300}, {"skill": "ground_pound"}],
         ]
         for steps in allowed:
@@ -393,7 +421,7 @@ class ActionTimingTests(unittest.TestCase):
                 "intent": "too long",
                 "steps": [
                     {"skill": "run", "ms": 5000},
-                    {"skill": "wait", "ms": 1001},
+                    {"skill": "look", "look": "left", "ms": 1001},
                 ],
             },
         )

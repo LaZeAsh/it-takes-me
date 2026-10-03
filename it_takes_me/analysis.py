@@ -25,6 +25,9 @@ class RunSummary:
     errors: int
     total_tokens: int
     tokens_per_act: int
+    # Fraction of the time from the first act to the end of the log spent with the pad moving
+    # (chunks plus keep_moving carries); the rest is standing still while the model plans.
+    moving_share: float
 
 
 def _median(values: list[float]) -> float:
@@ -59,6 +62,18 @@ def summarize_run(run_dir: Path) -> RunSummary:
                 decision_times.append(max(0.0, tool_started - prior[-1]))
 
     acts = sum(event.get("tool") == "act" for event in tools)
+    chunks = [event for event in events if event.get("kind") == "chunk"]
+    act_calls = [event for event in tools if event.get("tool") == "act"]
+    if chunks:
+        # Pipelined runs: act calls return mid-chunk, so their durations undercount play.
+        moving_ms = sum(int(e.get("elapsed_ms", 0)) + int(e.get("carry_ms", 0)) for e in chunks)
+    else:
+        moving_ms = sum(float(e.get("duration_ms", 0)) for e in act_calls)
+    moving_share = 0.0
+    if act_calls:
+        first = float(act_calls[0]["t"]) - float(act_calls[0].get("duration_ms", 0)) / 1000
+        window = float(events[-1]["t"]) - first
+        moving_share = round(min(1.0, moving_ms / 1000 / window), 2) if window > 0 else 0.0
     return RunSummary(
         run=Path(run_dir).name,
         runtime=str(session.get("runtime", "legacy")),
@@ -74,4 +89,5 @@ def summarize_run(run_dir: Path) -> RunSummary:
         errors=sum(event.get("kind") == "error" for event in events),
         total_tokens=total_tokens,
         tokens_per_act=round(total_tokens / acts) if acts else 0,
+        moving_share=moving_share,
     )

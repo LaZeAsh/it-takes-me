@@ -102,6 +102,9 @@ class RemotePadIO:
     def capture(self) -> bytes:
         return self._screen.capture()
 
+    def capture_image(self) -> Image:
+        return self._screen.capture_image()
+
     def snapshot(self, size: tuple[int, int]) -> Image:
         return self._screen.snapshot(size)
 

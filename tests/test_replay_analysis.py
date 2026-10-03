@@ -46,6 +46,22 @@ class ReplayAndAnalysisTests(unittest.TestCase):
         self.assertEqual(summary.tokens_per_act, 1200)
         self.assertEqual(summary.runtime, "responses")
 
+    def test_moving_share_counts_chunks_and_carries(self) -> None:
+        events = [
+            {"t": 0.0, "kind": "session", "runtime": "codex", "model": "test"},
+            {"t": 2.0, "kind": "tool_call", "tool": "act", "duration_ms": 1000},
+            {"t": 5.0, "kind": "chunk", "elapsed_ms": 4000, "carry_ms": 500},
+            {"t": 11.0, "kind": "chunk", "elapsed_ms": 3500, "carry_ms": 0},
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            run = Path(directory)
+            (run / "events.jsonl").write_text(
+                "".join(json.dumps(event) + "\n" for event in events), encoding="utf-8"
+            )
+            summary = summarize_run(run)
+
+        self.assertEqual(summary.moving_share, 0.8)
+
 
 if __name__ == "__main__":
     unittest.main()

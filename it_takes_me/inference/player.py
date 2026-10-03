@@ -11,7 +11,7 @@ from typing import Any
 from rich.console import Console
 
 from it_takes_me.config import Settings
-from it_takes_me.game.io import GameIO
+from it_takes_me.game.io import GameIO, grab
 from it_takes_me.inference.session import (
     ActiveTurn,
     InferenceError,
@@ -138,8 +138,9 @@ class GamePlayer:
         return " ".join(parts)
 
     def _run_turn(self, turn_no: int) -> None:
-        note = self.tools.settle()
-        png = self.io.capture()
+        # A chunk may still be playing: the frame shows it mid-way and the note says so.
+        note = self.tools.progress()
+        png = grab(self.io)
         reason = f"turn {turn_no} start"
         self.recorder.frame(png, reason=reason)
         model_frame = self.frame_encoder.encode(

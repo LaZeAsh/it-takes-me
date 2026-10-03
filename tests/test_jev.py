@@ -97,7 +97,10 @@ class ActionSpaceTests(unittest.TestCase):
             step_for(choice(skill="interact", duration="ms_300")),
             {"skill": "interact", "ms": 300},
         )
-        self.assertEqual(step_for(choice(skill="wait", dir="left")), {"skill": "wait", "ms": 600})
+        self.assertEqual(
+            step_for(choice(skill="run", dir="none", speed="run")),
+            {"skill": "run", "dir": "forward", "speed": 1.0, "ms": 1800},
+        )
         self.assertEqual(
             step_for(choice(skill="ability", trigger="LT", duration="ms_1000")),
             {"skill": "ability", "button": "LT", "ms": 1000},
@@ -127,7 +130,7 @@ class ActionSpaceTests(unittest.TestCase):
         self.assertNotIn("interact", available_skills(scene(HEXAGON)))
         self.assertIn("interact", available_skills(scene(FUSE)))
         self.assertNotIn("skip_cutscene", available_skills(scene(FUSE)))
-        self.assertEqual(set(available_skills(scene(kind="cutscene"))), {"skip_cutscene", "wait"})
+        self.assertEqual(set(available_skills(scene(kind="cutscene"))), {"skip_cutscene"})
 
     def test_invalid_timing_falls_back_to_the_skill_default(self) -> None:
         step, segments, note = compile_step_safely(
