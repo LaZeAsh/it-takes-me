@@ -205,7 +205,8 @@ class PadThread:
                 now = (time.monotonic() - start) * 1000
                 job.carry_ms = round(now)
                 if nxt is None or self._halt.is_set():
-                    self._queue.put(nxt)  # let `_run` see the shutdown or cancel the job
+                    if nxt is not False:
+                        self._queue.put(nxt)  # let `_run` see the shutdown or cancel the job
                     job.carry_reason = "stopped"
                     return None
                 if nxt is not False:
