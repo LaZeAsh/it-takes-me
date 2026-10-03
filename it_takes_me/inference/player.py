@@ -12,6 +12,7 @@ from rich.console import Console
 
 from it_takes_me.config import Settings
 from it_takes_me.game.io import GameIO, grab
+from it_takes_me.inference.registry import ToolRegistry
 from it_takes_me.inference.session import (
     ActiveTurn,
     InferenceError,
@@ -23,7 +24,6 @@ from it_takes_me.inference.session import (
     TurnCompleted,
     UsageUpdated,
 )
-from it_takes_me.inference.tools import ToolRegistry
 from it_takes_me.recording import RunRecorder
 from it_takes_me.vision import ModelFrameEncoder
 

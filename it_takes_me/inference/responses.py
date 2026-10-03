@@ -14,6 +14,7 @@ from typing import Any
 from openai import OpenAI
 
 from it_takes_me.inference.prompts import developer_instructions
+from it_takes_me.inference.registry import ToolRegistry
 from it_takes_me.inference.session import (
     ActiveTurn,
     InferenceError,
@@ -24,7 +25,6 @@ from it_takes_me.inference.session import (
     UsageBreakdown,
     UsageUpdated,
 )
-from it_takes_me.inference.tools import ToolRegistry
 
 
 def _data_url(path: Path) -> str:

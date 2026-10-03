@@ -27,8 +27,10 @@ class ActCallTests(unittest.TestCase):
         self.clock = Clock()
         self.io = FakeGame(self.clock)
         self.io.snapshot_fn = lambda size, n: Image.new("L", size, abs(n * 3 % 200 - 100))
-        self.enterContext(patch("it_takes_me.game.chunks.time.monotonic", self.clock.monotonic))
-        self.enterContext(patch("it_takes_me.game.chunks.time.sleep", self.clock.sleep))
+        self.enterContext(patch("it_takes_me.game.playback.time.monotonic", self.clock.monotonic))
+        self.enterContext(patch("it_takes_me.game.pad_thread.time.monotonic", self.clock.monotonic))
+        self.enterContext(patch("it_takes_me.game.playback.time.sleep", self.clock.sleep))
+        self.enterContext(patch("it_takes_me.game.pad_thread.time.sleep", self.clock.sleep))
         self.said: list[str] = []
 
     def tools(self):

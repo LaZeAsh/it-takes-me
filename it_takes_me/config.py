@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from it_takes_me.game.chunks import MAX_CHUNK_MS
+from it_takes_me.game.tuning import MAX_CHUNK_MS
 from it_takes_me.vision import FrameDetail, ScreenHalf
 
 # DEFAULT_MODEL = "gpt-6.1-sol"

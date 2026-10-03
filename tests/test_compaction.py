@@ -7,9 +7,9 @@ from unittest.mock import Mock, patch
 
 from it_takes_me.config import Settings
 from it_takes_me.inference.player import GamePlayer
+from it_takes_me.inference.registry import ToolRegistry
 from it_takes_me.inference.runtime import CodexRuntime
 from it_takes_me.inference.session import UsageBreakdown, UsageUpdated
-from it_takes_me.inference.tools import ToolRegistry
 from it_takes_me.vision import ModelFrameEncoder
 from rich.console import Console
 

@@ -13,8 +13,9 @@ from typing import Any
 from openai_codex import Codex
 from rich.console import Console
 
-from it_takes_me.game.chunks import MAX_CHUNK_MS, play_chunk
 from it_takes_me.game.io import GameIO, grab
+from it_takes_me.game.playback import play_chunk
+from it_takes_me.game.tuning import MAX_CHUNK_MS
 from it_takes_me.jev.actions import build_step, compile_step_safely, run_ms
 from it_takes_me.jev.config import JevSettings
 from it_takes_me.jev.decide import EXPLORE, Decider, Decision, goal_options
