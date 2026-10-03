@@ -6,9 +6,9 @@ import argparse
 import logging
 from pathlib import Path
 
-from it_takes_me.app import play_session
-from it_takes_me.config import DEFAULT_MODEL, DEFAULT_REASONING_EFFORT, Settings
-from it_takes_me.game.replay import ReplayGameIO
+from it_takes_me.sol.app import play_session
+from it_takes_me.sol.config import DEFAULT_MODEL, DEFAULT_REASONING_EFFORT, Settings
+from it_takes_me.sol.replay import ReplayGameIO
 from rich.console import Console
 from rich.logging import RichHandler
 

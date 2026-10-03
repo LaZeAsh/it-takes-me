@@ -10,10 +10,10 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from .chunks import CONDITIONS, Segment
-from .io import NEUTRAL, GameIO, grab
-from .playback import ChunkResult, Watcher, play_chunk, play_segments
-from .tuning import CARRY_MAX_MS, CHECK_EVERY_MS
+from it_takes_me.game.chunks import CONDITIONS, Segment
+from it_takes_me.game.io import NEUTRAL, GameIO, grab
+from it_takes_me.game.playback import ChunkResult, Watcher, play_chunk, play_segments
+from it_takes_me.game.tuning import CARRY_MAX_MS, CHECK_EVERY_MS
 
 if TYPE_CHECKING:
     from PIL.Image import Image

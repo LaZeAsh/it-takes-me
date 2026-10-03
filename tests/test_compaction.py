@@ -5,11 +5,11 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from it_takes_me.config import Settings
-from it_takes_me.inference.player import GamePlayer
-from it_takes_me.inference.registry import ToolRegistry
-from it_takes_me.inference.runtime import CodexRuntime
-from it_takes_me.inference.session import UsageBreakdown, UsageUpdated
+from it_takes_me.sol.config import Settings
+from it_takes_me.sol.player import GamePlayer
+from it_takes_me.sol.registry import ToolRegistry
+from it_takes_me.sol.runtime import CodexRuntime
+from it_takes_me.sol.session import UsageBreakdown, UsageUpdated
 from it_takes_me.vision import ModelFrameEncoder
 from rich.console import Console
 
@@ -20,7 +20,7 @@ class AutomaticCompactionTests(unittest.TestCase):
         client.thread_start.return_value = SimpleNamespace(
             thread=SimpleNamespace(id="test-thread"), model="gpt-6.1-sol"
         )
-        with patch("it_takes_me.inference.runtime.CodexClient", return_value=client):
+        with patch("it_takes_me.sol.runtime.CodexClient", return_value=client):
             runtime = CodexRuntime(compact_threshold=123_000)
         for start in (runtime.start_thread, runtime.start_session):
             with self.subTest(entry_point=start.__name__):

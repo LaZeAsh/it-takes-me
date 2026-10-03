@@ -11,7 +11,6 @@ from PIL.Image import Image
 
 from it_takes_me.game.chunks import compile_chunk, expand_repeats
 from it_takes_me.game.io import GameIO, grab
-from it_takes_me.game.pad_thread import Job, PadThread
 from it_takes_me.game.playback import release_point
 from it_takes_me.game.tuning import (
     IDLE_REPORT_MS,
@@ -21,8 +20,9 @@ from it_takes_me.game.tuning import (
     LEAD_SMOOTHING,
     MAX_CHUNK_MS,
 )
-from it_takes_me.inference.act_spec import act_description, act_schema
-from it_takes_me.inference.registry import ContentItem, ToolRegistry, image_item, text_item
+from it_takes_me.sol.act_spec import act_description, act_schema
+from it_takes_me.sol.pad_thread import Job, PadThread
+from it_takes_me.sol.registry import ContentItem, ToolRegistry, image_item, text_item
 from it_takes_me.vision import FrameDetail, ModelFrame, ModelFrameEncoder, ScreenHalf
 
 # "end" (wait for the chunk to finish) was offered too, but Sol chose it on every call, which

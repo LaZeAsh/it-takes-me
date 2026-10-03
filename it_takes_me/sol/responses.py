@@ -13,9 +13,9 @@ from typing import Any
 
 from openai import OpenAI
 
-from it_takes_me.inference.prompts import developer_instructions
-from it_takes_me.inference.registry import ToolRegistry
-from it_takes_me.inference.session import (
+from it_takes_me.sol.prompts import developer_instructions
+from it_takes_me.sol.registry import ToolRegistry
+from it_takes_me.sol.session import (
     ActiveTurn,
     InferenceError,
     InferenceEvent,

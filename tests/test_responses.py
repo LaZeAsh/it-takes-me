@@ -6,9 +6,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from it_takes_me.inference.registry import ToolRegistry, text_item
-from it_takes_me.inference.responses import ResponsesRuntime, _tool_output
-from it_takes_me.inference.session import TextDelta, TurnCompleted
+from it_takes_me.sol.registry import ToolRegistry, text_item
+from it_takes_me.sol.responses import ResponsesRuntime, _tool_output
+from it_takes_me.sol.session import TextDelta, TurnCompleted
 
 
 class FakeItem:

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from it_takes_me.config import Settings
-from it_takes_me.inference.prompts import developer_instructions
+from it_takes_me.sol.config import Settings
+from it_takes_me.sol.prompts import developer_instructions
 
 
 class GameplayPolicyTests(unittest.TestCase):

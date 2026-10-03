@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from it_takes_me.analysis import summarize_run
+from it_takes_me.sol.analysis import summarize_run
 from rich.console import Console
 from rich.table import Table
 

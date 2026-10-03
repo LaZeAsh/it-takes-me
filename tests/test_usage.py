@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from it_takes_me.inference.session import UsageBreakdown
+from it_takes_me.sol.session import UsageBreakdown
 
 
 class TokenBreakdownTests(unittest.TestCase):

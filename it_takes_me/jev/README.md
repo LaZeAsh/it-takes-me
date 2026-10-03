@@ -1,7 +1,7 @@
 # Luna + Jev player
 
 A second technique for playing _It Takes Two_, separate from the Sol/Codex player
-(`run.py`, `it_takes_me/inference/`). It shares only the game layer: capture and controller
+(`run.py`, `it_takes_me/sol/`). It shares only the game layer: capture and controller
 (`it_takes_me/game/`), the action runner and its checks (`chunks.py`, `playback.py`), frame cropping
 (`vision.py`), and recording (`recording.py`).
 

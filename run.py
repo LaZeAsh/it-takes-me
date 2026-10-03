@@ -9,13 +9,13 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from it_takes_me.app import play_session
-from it_takes_me.config import DEFAULT_MODEL, DEFAULT_REASONING_EFFORT, Settings
 from it_takes_me.game.io import GameIO
 from it_takes_me.game.pad_gui import PadMixer, start_pad_window
 from it_takes_me.game.pad_host import RemotePadIO, connect_pad
 from it_takes_me.game.tuning import MAX_CHUNK_MS as DEFAULT_MAX_CHUNK_MS
 from it_takes_me.game.windows import ScreenCapture, WindowsGameIO
+from it_takes_me.sol.app import play_session
+from it_takes_me.sol.config import DEFAULT_MODEL, DEFAULT_REASONING_EFFORT, Settings
 from it_takes_me.vision import FrameDetail
 from rich.console import Console
 from rich.logging import RichHandler

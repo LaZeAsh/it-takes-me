@@ -6,13 +6,13 @@ from pathlib import Path
 
 from rich.console import Console
 
-from it_takes_me.config import Settings
 from it_takes_me.game.io import GameIO
-from it_takes_me.inference.player import GamePlayer
-from it_takes_me.inference.responses import ResponsesRuntime
-from it_takes_me.inference.runtime import CodexRuntime
-from it_takes_me.inference.tools import build_game_tools
 from it_takes_me.recording import RunRecorder
+from it_takes_me.sol.config import Settings
+from it_takes_me.sol.player import GamePlayer
+from it_takes_me.sol.responses import ResponsesRuntime
+from it_takes_me.sol.runtime import CodexRuntime
+from it_takes_me.sol.tools import build_game_tools
 from it_takes_me.vision import ModelFrame, ModelFrameEncoder
 
 

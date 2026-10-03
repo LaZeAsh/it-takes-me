@@ -71,8 +71,8 @@ back to back like a player who never lets go of the controller, and the model al
 still while it plans each call. In recorded runs, waits were mostly whole chunks spent just
 looking (~3.5 s of planning for ~0.3 s of play).
 
-Chunks are **pipelined**. A background pad thread (`PadThread` in `chunks.py`) owns the
-controller. For a chunk at least twice the planning time (~7 s), `act` hands its result back
+Chunks are **pipelined**. A background pad thread (`PadThread` in `it_takes_me/sol/pad_thread.py`)
+owns the controller. For a chunk at least twice the planning time (~7 s), `act` hands its result back
 about one planning time before the chunk ends: the frame shows that moment and the result says which steps are still to
 play. The model plans its next chunk while those steps play, and the next chunk queues and starts
 the instant the current one ends, with no neutral gap. The lead time starts at 3.5 s and follows

@@ -7,8 +7,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from it_takes_me.game.io import grab
-from it_takes_me.inference.tools import build_game_tools
 from it_takes_me.recording import RunRecorder
+from it_takes_me.sol.tools import build_game_tools
 from it_takes_me.vision import ModelFrameEncoder
 from PIL import Image
 from tests.test_chunks import Clock, FakeGame
@@ -28,9 +28,9 @@ class ActCallTests(unittest.TestCase):
         self.io = FakeGame(self.clock)
         self.io.snapshot_fn = lambda size, n: Image.new("L", size, abs(n * 3 % 200 - 100))
         self.enterContext(patch("it_takes_me.game.playback.time.monotonic", self.clock.monotonic))
-        self.enterContext(patch("it_takes_me.game.pad_thread.time.monotonic", self.clock.monotonic))
+        self.enterContext(patch("it_takes_me.sol.pad_thread.time.monotonic", self.clock.monotonic))
         self.enterContext(patch("it_takes_me.game.playback.time.sleep", self.clock.sleep))
-        self.enterContext(patch("it_takes_me.game.pad_thread.time.sleep", self.clock.sleep))
+        self.enterContext(patch("it_takes_me.sol.pad_thread.time.sleep", self.clock.sleep))
         self.said: list[str] = []
 
     def tools(self):

@@ -5,8 +5,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from it_takes_me.analysis import summarize_run
-from it_takes_me.game.replay import ReplayGameIO
+from it_takes_me.sol.analysis import summarize_run
+from it_takes_me.sol.replay import ReplayGameIO
 from PIL import Image
 
 

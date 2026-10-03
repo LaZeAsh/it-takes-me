@@ -9,7 +9,7 @@ from unittest.mock import patch
 from it_takes_me.game.chunks import compile_chunk, compile_step
 from it_takes_me.game.io import NEUTRAL, Button, PadState
 from it_takes_me.game.playback import play_chunk
-from it_takes_me.inference.tools import build_game_tools
+from it_takes_me.sol.tools import build_game_tools
 from PIL import Image
 
 
@@ -56,9 +56,9 @@ class ActionTimingTests(unittest.TestCase):
         self.clock = Clock()
         self.io = FakeGame(self.clock)
         self.enterContext(patch("it_takes_me.game.playback.time.monotonic", self.clock.monotonic))
-        self.enterContext(patch("it_takes_me.game.pad_thread.time.monotonic", self.clock.monotonic))
+        self.enterContext(patch("it_takes_me.sol.pad_thread.time.monotonic", self.clock.monotonic))
         self.enterContext(patch("it_takes_me.game.playback.time.sleep", self.clock.sleep))
-        self.enterContext(patch("it_takes_me.game.pad_thread.time.sleep", self.clock.sleep))
+        self.enterContext(patch("it_takes_me.sol.pad_thread.time.sleep", self.clock.sleep))
 
     def test_jump_releases_button_while_movement_continues(self) -> None:
         result = play_chunk(

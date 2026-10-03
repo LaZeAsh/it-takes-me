@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from .io import NEUTRAL, PadState
+from it_takes_me.game.io import NEUTRAL, PadState
 
 
 class ReplayGameIO:

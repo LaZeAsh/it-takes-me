@@ -1,8 +1,8 @@
 """
 Action chunks: the model chooses input durations and we execute them locally.
 
-This module compiles steps into timed pad segments; `playback` runs them and `pad_thread` queues
-them back to back.
+This module compiles steps into timed pad segments; `playback` runs them and
+`it_takes_me.sol.pad_thread` queues them back to back.
 """
 
 from __future__ import annotations

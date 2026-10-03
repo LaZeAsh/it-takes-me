@@ -7,10 +7,10 @@ from unittest.mock import patch
 
 from it_takes_me.game.chunks import compile_chunk, expand_repeats
 from it_takes_me.game.io import NEUTRAL, PadState
-from it_takes_me.game.pad_thread import Job, PadThread
 from it_takes_me.game.playback import release_point
 from it_takes_me.game.tuning import LEAD_MAX_MS, LEAD_MIN_MS
-from it_takes_me.inference.tools import LeadTimer, build_game_tools
+from it_takes_me.sol.pad_thread import Job, PadThread
+from it_takes_me.sol.tools import LeadTimer, build_game_tools
 from PIL import Image
 from tests.test_chunks import Clock, FakeGame
 
@@ -40,9 +40,9 @@ class PipelineTests(unittest.TestCase):
         self.io.capture = lambda: frame
         self.io.snapshot_fn = moving_view
         self.enterContext(patch("it_takes_me.game.playback.time.monotonic", self.clock.monotonic))
-        self.enterContext(patch("it_takes_me.game.pad_thread.time.monotonic", self.clock.monotonic))
+        self.enterContext(patch("it_takes_me.sol.pad_thread.time.monotonic", self.clock.monotonic))
         self.enterContext(patch("it_takes_me.game.playback.time.sleep", self.clock.sleep))
-        self.enterContext(patch("it_takes_me.game.pad_thread.time.sleep", self.clock.sleep))
+        self.enterContext(patch("it_takes_me.sol.pad_thread.time.sleep", self.clock.sleep))
 
     def act(self, tools, steps: list[dict], **fields: object) -> dict:
         return tools.dispatch("act", {"task": "t", "intent": "go", "steps": steps, **fields})
