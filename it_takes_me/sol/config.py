@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-
+from typing import Literal
 from it_takes_me.game.tuning import MAX_CHUNK_MS
 from it_takes_me.vision import FrameDetail, ScreenHalf
 
@@ -18,28 +18,20 @@ class Settings:
     runtime: str = "codex"
     model: str = DEFAULT_MODEL
     reasoning_effort: str = DEFAULT_REASONING_EFFORT
-    # Codex only: "priority" is the Fast tier (~2x speed, more usage). `None` uses the standard
-    # tier.
     service_tier: str | None = "priority"
     runs_dir: Path = Path("runs")
-    # Which character the model controls. The human plays the other one.
-    character: str = "May"
-    # Per-turn guardrails.
+    character: Literal["May", "Cody"] = "May"
     max_tool_calls_per_turn: int = 30
     max_turns: int | None = None
     frame_after_action: bool = True
-    # Model-facing observations are cropped to the controlled half and resized. Full-resolution
-    # PNG captures are still retained in the run recording.
+
     model_frame_detail: FrameDetail = "low"
     model_frame_low_max_px: int = 512
     model_frame_high_max_px: int = 1536
     model_frame_jpeg_quality: int = 85
-    # Action chunks: longest chunk the model may plan, and mid-chunk frames on `observe: keyframes`.
     max_chunk_ms: int = MAX_CHUNK_MS
     keyframes: int = 2
-    # Both runtimes compact automatically when rendered input context passes this threshold,
-    # rather than using cumulative session usage, which only grows over a session.
-    compact_after_input_tokens: int = 200_000
+    compact_after_input_tokens: int = 244_800
     max_output_tokens: int = 4000
     api_store: bool = True
     extra_instructions: list[str] = field(default_factory=list)
