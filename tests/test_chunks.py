@@ -405,19 +405,12 @@ class ActionTimingTests(unittest.TestCase):
         other = build_game_tools(self.io, max_chunk_ms=9000, frame_after_action=False)
         for spec in (tools.specs()[1], tools.responses_specs()[1]):
             schema = spec.get("inputSchema", spec.get("parameters"))
-            properties = schema["properties"]["steps"]["items"]["properties"]
-            for timing in ("ms", "hold_ms", "gap_ms"):
-                self.assertEqual(properties[timing]["minimum"], 1)
-                self.assertEqual(properties[timing]["maximum"], 6000)
-            self.assertEqual(properties["button"]["enum"], [b.value for b in Button])
-            self.assertIn("skip_cutscene", properties["skill"]["enum"])
+            self.assertEqual(schema["properties"]["steps"]["type"], "string")
+            self.assertEqual(schema["required"], ["intent", "steps"])
+            self.assertIn("up to 6000 ms", spec["description"])
+            self.assertIn("skip_cutscene", spec["description"])
             self.assertIn("2 frames", spec["description"])
-        self.assertEqual(
-            other.tools["act"].input_schema["properties"]["steps"]["items"]["properties"]["ms"][
-                "maximum"
-            ],
-            9000,
-        )
+        self.assertIn("up to 9000 ms", other.tools["act"].description)
         response = tools.dispatch(
             "act",
             {

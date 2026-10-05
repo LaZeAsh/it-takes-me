@@ -12,6 +12,7 @@ from PIL.Image import Image
 from it_takes_me.game.chunks import compile_chunk, expand_repeats
 from it_takes_me.game.io import GameIO, grab
 from it_takes_me.game.playback import release_point
+from it_takes_me.game.shorthand import parse_steps
 from it_takes_me.game.tuning import (
     IDLE_REPORT_MS,
     LEAD_DEFAULT_MS,
@@ -215,9 +216,14 @@ def build_game_tools(
     def commit_task(a: dict[str, Any]) -> str:
         """Validate the task switch before anything is pressed; return a status line."""
         task = " ".join(str(a.get("task", "")).split())
-        if not task:
-            raise ValueError("`task` is required: the one task you are working on.")
         current = reg.current_task
+        if not task:
+            if current is None:
+                raise ValueError(
+                    "You have no current task: set `task` to the one task you are working on. "
+                    "Nothing was pressed."
+                )
+            return f"task: {current}"
         if current is None:
             reg.current_task = task
             return f"task: {task}"
@@ -254,7 +260,12 @@ def build_game_tools(
         nonlocal last, seen_epoch
         lead.arrived()
         steps = a.get("steps") or []
-        intent = str(a.get("intent", "")).strip()
+        if isinstance(steps, str):
+            text = " ".join(steps.split())
+            steps = parse_steps(text)
+        else:
+            text = ""
+        intent = str(a.get("intent", "")).strip() or text[:60]
         observe = a.get("observe", "early")
         if observe not in OBSERVE_MODES:
             raise ValueError(

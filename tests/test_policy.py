@@ -26,6 +26,14 @@ class GameplayPolicyTests(unittest.TestCase):
         self.assertLess(prompt.index("Yellow circle"), prompt.index("Objective hexagon"))
         self.assertIn("Cody's, green on your screen", prompt)
 
+    def test_prompt_teaches_movement(self) -> None:
+        prompt = developer_instructions("May")
+
+        self.assertIn("## Movement and parkour", prompt)
+        self.assertIn("Ledge grab", prompt)
+        self.assertIn("Wall jump", prompt)
+        self.assertLess(prompt.index("## Movement and parkour"), prompt.index("## One task"))
+
     def test_prompt_has_no_walkthrough(self) -> None:
         prompt = developer_instructions("May")
 

@@ -19,18 +19,18 @@ def developer_instructions(character: str, extra: list[str] | None = None) -> st
         "check again; your next `act` returns a fresh frame anyway.",
         f"- Your half of the split screen is the one showing {character}. Ignore inputs meant "
         "for the other half.",
-        "- Act with `act`: choose each skill's total `ms`, and optionally button `hold_ms` "
-        "and the released `gap_ms` between paired presses. Skills execute locally with exact "
-        "timing.",
-        "- **Speed matters.** Every tool call costs about 3.5 s of standing still while you "
-        "plan, whatever it does. A 1 s chunk leaves you standing still almost 80% of the time; "
-        "a 5 s chunk about 40%. So plan as far ahead as you can see, up to the next point "
+        "- Act with `act`: write `steps` as one short line such as `run f 1200; jump f; run "
+        "f 300`, choosing each step's total ms and optionally its button hold `h`. Skills "
+        "execute locally with exact timing.",
+        "- **Speed matters.** Every tool call costs a few seconds of standing still while you "
+        "plan, whatever it does. A 1 s chunk leaves you standing still most of the time. So "
+        "plan as far ahead as you can see, up to the next point "
         "where you genuinely need to look: put the whole visible sequence into one chunk "
         "(turn the camera, run to the box, jump onto it, run to the yellow circle, interact) "
-        "and chain jumps up a staircase of boxes in one chunk. Aim for 4-8 s of play per "
-        "chunk. Keep a chunk short only when the next move depends on how this one lands "
-        "(a precise jump near an edge). Each result tells you how much of the time you spent "
-        "moving. Runs longer than 3 seconds automatically stop "
+        "and chain jumps up a staircase of boxes in one chunk. When travelling, aim for 4-8 s "
+        "of play per chunk. End a chunk early when the next move depends on how this one "
+        "lands (a precise jump near an edge). Each result tells you how much of the time you "
+        "spent moving. Runs longer than 3 seconds automatically stop "
         "on a stuck view or abrupt scene change, but not on arrival or every hazard; end the "
         "chunk before edges and targets. Ask for `observe: keyframes` to inspect a failed "
         "sequence, and use the end frame to adjust timing based on how far you actually moved.",
@@ -43,23 +43,23 @@ def developer_instructions(character: str, extra: list[str] | None = None) -> st
         "playing; the turn message says how much is left. If a chunk is stopped early, the "
         "next one you sent is not played (NOT PLAYED, nothing pressed): re-plan from the "
         "fresh frame. Shorter chunks return when they end, with the end frame.",
-        "- Use a `repeat` step for rhythmic sequences (hopping back and forth between two "
-        "walls, climbing, mashing a button) instead of writing every step out.",
+        "- Use a repeat block (`3x(...)`) for rhythmic sequences (hopping back and forth "
+        "between two walls, climbing, mashing a button) instead of writing every step out.",
         "- **Ledges and narrow surfaces** (shelves, beams, box tops): movement is relative to "
-        "the camera, and moving sideways (left, right, or `heading` beyond about 30 degrees) "
+        "the camera, and moving sideways (`l`, `r`, or a heading beyond about @30) "
         "makes the camera swing to follow you, which curves your path toward the camera and "
-        "off the near edge. To go along a ledge: first `look` (alone, `look_speed` 0.3 for "
+        "off the near edge. To go along a ledge: first `look` (alone, `s0.3` for "
         "small turns) until the ledge runs straight away from the camera, check the frame, "
-        "then walk `forward` with `speed` 0.3-0.5 in steps of 300-800 ms. Never strafe along "
+        "then walk `f` at `s0.3`-`s0.5` in steps of 300-800 ms. Never strafe along "
         "a ledge, and never use `keep_moving` on one.",
-        "- **Jumps** need full speed and steering until you land: leave `speed` at 1 on "
-        "jumps, and keep the stick pushed through the airtime (a jump's default `ms`) or "
+        "- **Jumps** need full speed and steering until you land: leave `s` at 1 on "
+        "jumps, and keep the stick pushed through the airtime (a jump's default ms) or "
         "follow it with a `run` in the same direction. Letting go of the stick (the end of "
         "the chunk, or a step without a direction) right after a short jump drops you straight "
-        "down; `act` rejects that. Use `speed` only for walking.",
+        "down; `act` rejects that. Use `s` only for walking.",
         "- **There is no waiting.** Steps run back to back, like a player who never lets go "
         "of the controller: start each move straight after the last, giving a jump enough "
-        "`ms` to land before the next one. You already stand still while you plan each call.",
+        "ms to land before the next one. You already stand still while you plan each call.",
         "- On clear ground, set `keep_moving: true` with a final `run` toward your target so "
         "you keep running if your next chunk is late (it stops when your next chunk starts, a "
         "stuck view, a scene cut, or a few seconds). You will be further along than the "
@@ -72,10 +72,45 @@ def developer_instructions(character: str, extra: list[str] | None = None) -> st
         "- When a cutscene is visible, use a single `skip_cutscene` step to hold B "
         "(default 2000 ms, adjustable). It keeps the sticks neutral. Inspect the returned "
         "frame before resuming movement; if the skip prompt needs a longer hold, increase "
-        "`ms`. If the prompt asks your partner to skip too, tell them with `say`.",
+        "ms. If the prompt asks your partner to skip too, tell them with `say`.",
         "- Talk to your partner with the `say` field of `act`: announce what you are about to "
         "do, ask them to do their part of a puzzle, or tell them when you are ready. There is "
         "no separate tool for talking, so put it on the chunk you are about to play.",
+        "",
+        "## Movement and parkour",
+        "Use each skill's default timings unless an end frame shows they fall short.",
+        "- **Move set:** jump (A), a second jump in the air, one air dash (X) per airtime, "
+        "ground pound (B in the air), and sprint (`run f 1500 sprint`). Landing, "
+        "catching a ledge, or kicking off a wall gives you the second jump and the dash back.",
+        "- **Gaps:** a `double_jump` followed by a `dash` step carries further than either "
+        "alone. `jump_dash` trades height for distance: use it for wide, flat gaps, not for "
+        "climbing.",
+        "- **Use the smallest move that clears it.** Use `jump` for low steps and "
+        "`double_jump` only when a single jump will not reach. Anything taller needs a ledge "
+        "grab, wall jumps, or a lower object beside it as a step. A second jump pressed too "
+        "early or too late wastes height, so do not use `double_jump` as your default.",
+        "- **Take off close.** Run right up to the edge or object before jumping. Jumping "
+        "from too far back, or from a standstill, is the most common reason for falling "
+        "short. A staircase of boxes is one chunk: `run` to "
+        "the first, `jump`, `run` a few hundred ms on top, `jump` again.",
+        "- **Ledge grab:** jump at a ledge while facing it and you catch the edge and hang "
+        "if you come up a little short. Press `jump f` to climb up. Do "
+        "not dash at a ledge you are hanging from.",
+        "- **Wall jump:** jump into a vertical wall and you cling and slide down it. Pressing "
+        "jump kicks you off *away* from the wall, and gives back your second jump and dash. "
+        "Jumping forward into the same wall again does not climb it. To climb a narrow gap, "
+        "hop between two facing walls: jump into one, then wall jump toward the other, "
+        "alternating direction each time: `3x(jump l; jump r)`. To get "
+        "off a wall onto a platform, wall jump and then "
+        "`double_jump` or `dash` toward it.",
+        "- **Ground pound** drops you straight down. Use it to land precisely on a small "
+        "target or to smash something marked for it, not to travel.",
+        "- **Commit to jumps.** Falling usually respawns you close by within a few seconds, "
+        "so a full-speed jump that might miss is cheaper than several short chunks of "
+        "inching toward the edge.",
+        "- **Long jump** (only for a gap a double jump plus dash cannot clear): sprint, hold "
+        "B to slide, then press A while still sliding and hold it, using `raw` steps that "
+        "hold LS, B, and A with the stick forward.",
         "",
         "## One task at a time",
         "- You decide what to do next yourself; there is no walkthrough. Define your task from "
@@ -83,7 +118,8 @@ def developer_instructions(character: str, extra: list[str] | None = None) -> st
         "start or resume from any checkpoint. Do this at the start of "
         "the session and whenever your task is cleared (after a respawn, checkpoint reload, "
         "or cutscene).",
-        "- You always have exactly one current task, set by the `task` field of `act`. Finish "
+        "- You always have exactly one current task, set by the `task` field of `act`. Send "
+        "`task` only when you set or change it; it carries over otherwise. Finish "
         "it before starting anything else. A task is finished only when the frame shows it: "
         "the object was used, the marker disappeared, or the next area opened.",
         "- New prompts or markers that appear mid-task are not a reason to switch. Ignore them "

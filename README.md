@@ -7,9 +7,28 @@ The default harness talks to the model through the **Codex app-server** using th
 `openai-codex` Python SDK, so it runs on your ChatGPT/Codex subscription (no API key). An optional
 **Responses API** harness runs the same player and tools with API models.
 Game actions are exposed to the model as dynamic tools on one persistent thread. The model
-acts in **chunks**: one `act` call plans up to 10 s of play as a list of skills (`run`, `jump`,
+acts in **chunks**: one `act` call plans up to 10 s of play as a line of skills (`run`, `jump`,
 `double_jump`, `dash`, ...) or raw pad segments, which `it_takes_me/game/chunks.py` executes
 locally with exact timing before returning the resulting frame(s).
+
+## Inference latency
+
+Every second the model spends planning, the character stands still, so the Codex thread is
+stripped to what the game needs (`it_takes_me/sol/runtime.py`):
+
+- **Direct tool calls.** Codex's catalog marks current models `code_mode_only`, which puts
+  dynamic tools behind a JavaScript `exec` tool: the model wrote ~70 tokens of script on every
+  call to unwrap the result, and the first call printed its frame as base64 text (~27k tokens
+  kept for the session). The runtime writes a copy of `~/.codex/models_cache.json` with
+  `tool_mode: "direct"` and passes it as `model_catalog_json`.
+- **No coding-agent context.** A short `baseInstructions` replaces Codex's system prompt, and
+  `-c` overrides turn off the features, MCP servers from your `config.toml`, and context sections
+  (permissions, apps, environment) a game player never uses.
+- **Compact steps.** `act` takes its steps as one line (`run f 1200; jump f; run f 300`), parsed
+  by `it_takes_me/game/shorthand.py`, and `task` is sent only when it changes.
+
+Together these took the first request from ~24.5k to ~8.5k input tokens, output from 120-160 to
+20-65 tokens per call, and the median act-to-act time in replay to about 2.5 s.
 
 When the model loses track of its partner, it can use `locate_partner` in an action chunk to
 click the right stick and reveal the partner's location, then plan its route from the returned frame.
@@ -22,25 +41,26 @@ tutorial prompts such as `X Dash`, then the distant white objective hexagon, and
 partner's colored location dot. There is no walkthrough: the model decides what to do next
 from what it sees.
 
-The model works on one task at a time. Every `act` names its `task`; changing it is refused (with
-nothing pressed) unless the call also marks the previous task `done` or `blocked`. Each turn's
+The model works on one task at a time. `act` sets `task` when there is none or it changes, and
+carries it over otherwise; changing it is refused (with nothing pressed) unless the call also
+marks the previous task `done` or `blocked`. Each turn's
 message repeats the current task. The model defines each task from the current frame, since play
 can resume from any checkpoint. A chunk that stops
 on a scene cut (respawn, checkpoint reload, cutscene) clears the task so it is defined again.
 
 ## Action timing
 
-The model chooses `ms` (total step duration) for every skill. Button skills also accept `hold_ms`:
-hold the button, then release it while continuing movement for the remaining time. `double_jump`
-and `jump_dash` accept `gap_ms`, the release time between the two presses. Each press lasts
-`hold_ms`, so the total must cover both holds and the gap. All durations are positive integer
+The model chooses `ms` (total step duration, a bare number) for every skill. Button skills also
+accept a hold (`h250`): hold the button, then release it while continuing movement for the
+remaining time. `double_jump` and `jump_dash` accept a gap (`g250`), the release time between the
+two presses. Each press lasts the hold, so the total must cover both holds and the gap. All durations are positive integer
 milliseconds; omitted timings preserve the original skill defaults. `interact`, `ability`, and
 `skip_cutscene` hold for the whole step by default. `press` can tap any controller button.
 
-Movement is camera-relative. Besides the 8 `dir` words, any moving step accepts `heading` (degrees:
-0 forward, 90 right, 180 back) for exact angles and `speed` (0.1-1, default 1) for how hard the
-stick is pushed; `look` accepts `look_speed` for small camera turns. The prompt asks the model to
-walk ledges forward at speed 0.3-0.5 after turning the camera to face along them, because moving
+Movement is camera-relative. Besides the 8 directions (`f b l r fl fr bl br`), any moving step
+accepts a heading (`@-22`; degrees, 0 forward, 90 right, 180 back) for exact angles and a speed
+(`s0.4`; 0.1-1, default 1) for how hard the stick is pushed; on `look` the same `s` sets the
+camera turn rate. The prompt asks the model to walk ledges forward at speed 0.3-0.5 after turning the camera to face along them, because moving
 sideways makes the camera swing and curves the path off the edge. Jumps stay at full speed.
 
 A directional jump, double jump, jump-dash, or dash must keep steering until it lands: if the next
@@ -51,18 +71,19 @@ default airtime, or `act` rejects the chunk before pressing anything. Releasing 
 `skip_cutscene` holds B with neutral sticks to skip a cutscene. Its default duration is 2,000 ms;
 the model can choose a longer `ms` if needed and inspects the returned frame before moving again.
 
-For example, this jumps with a 100 ms press and moves forward for 800 ms total:
+For example, this runs up to a gap, then jumps with a 150 ms press and keeps moving forward for
+800 ms total:
 
 ```json
-{"intent": "jump across the gap", "steps": [{"skill": "jump", "dir": "forward", "ms": 800, "hold_ms": 100}]}
+{"steps": "run f 600; jump f 800 h150"}
 ```
 
 For a clear stretch of traversal, the model can request a single 7,000 ms run rather than many
 short runs separated by inference. Runs longer than 3,000 ms automatically check low-resolution
 snapshots locally for a stuck view or abrupt scene change. A check stops the chunk, skips later
 steps, releases the controller, and reports why. These checks cannot detect arrival at a target
-or every hazard, so the model should shorten runs near edges and destinations. A `repeat` step
-(`{"skill": "repeat", "times": 5, "steps": [...]}`) plays a block of steps several times in a row,
+or every hazard, so the model should shorten runs near edges and destinations. A repeat block
+(`5x(jump l; jump r)`) plays a block of steps several times in a row,
 for rhythmic sequences such as hopping between two walls. `MAX_CHUNK_MS` in `run.py` sets the
 overall chunk limit, counted after repeats are expanded.
 

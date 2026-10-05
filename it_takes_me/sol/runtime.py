@@ -10,7 +10,11 @@ and interrupting reuse the SDK code paths.
 
 from __future__ import annotations
 
+import json
 import logging
+import os
+import tempfile
+import tomllib
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -43,6 +47,80 @@ from it_takes_me.sol.session import (
 log = logging.getLogger(__name__)
 
 _DECLINE = {"decision": "decline"}
+
+# Replaces Codex's coding-agent system prompt; the game rules are the developer instructions.
+BASE_INSTRUCTIONS = (
+    "You play a video game through the tools you are given. Follow the developer instructions."
+)
+# Codex features a game player never uses. Each one adds tools or instructions to every request,
+# which the model reads (time to first token) on every call.
+_UNUSED_FEATURES = (
+    "apps",
+    "plugins",
+    "multi_agent",
+    "shell_tool",
+    "unified_exec",
+    "browser_use",
+    "browser_use_external",
+    "computer_use",
+    "image_generation",
+    "goals",
+    "skill_search",
+    "tool_suggest",
+    "view_image",
+    "sleep_tool",
+    "in_app_browser",
+    "realtime_conversation",
+    "hooks",
+    "memories",
+    "workspace_dependencies",
+)
+_UNUSED_CONTEXT = ("permissions", "apps", "collaboration_mode")
+
+
+def _codex_home() -> Path:
+    return Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+
+
+def direct_tool_catalog(home: Path, out: Path) -> Path | None:
+    """Write Codex's model catalog with every model calling tools directly; None if absent.
+
+    Codex marks current models `code_mode_only`: our tools then sit behind a JavaScript `exec`
+    tool, and every call costs ~70 tokens of script to unwrap the result. The first call also
+    printed its frame as base64 text (~27k tokens kept for the whole session).
+    """
+    try:
+        cache = json.loads((home / "models_cache.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        log.warning("no Codex model catalog found; tools stay behind code mode")
+        return None
+    models = []
+    for model in cache.get("models", []):
+        model = {**model, "tool_mode": "direct"}
+        model.pop("multi_agent_version", None)  # drops the sub-agent role instructions
+        models.append(model)
+    out.write_text(json.dumps({"models": models}), encoding="utf-8")
+    return out
+
+
+def _mcp_servers(home: Path) -> list[str]:
+    try:
+        with open(home / "config.toml", "rb") as f:
+            return list(tomllib.load(f).get("mcp_servers", {}))
+    except (OSError, tomllib.TOMLDecodeError):
+        return []
+
+
+def lean_overrides(home: Path, catalog: Path | None) -> tuple[str, ...]:
+    """`-c` overrides that strip a play session down to our own tools and instructions."""
+    overrides = [f"features.{name}=false" for name in _UNUSED_FEATURES]
+    overrides += [f"include_{name}_instructions=false" for name in _UNUSED_CONTEXT]
+    overrides.append("include_environment_context=false")
+    # The user's own MCP servers (e.g. a browser REPL) would add their tools too.
+    overrides += [f"mcp_servers.{name}.enabled=false" for name in _mcp_servers(home)]
+    if catalog is not None:
+        overrides.append(f"model_catalog_json={json.dumps(catalog.as_posix())}")
+    return tuple(overrides)
 
 
 class CodexTurn(ActiveTurn):
@@ -102,8 +180,13 @@ class CodexRuntime:
         self.tools = tools  # noqa: BLE001
         self._compact_threshold = compact_threshold
         self._service_tier = service_tier
+        home = _codex_home()
+        catalog = direct_tool_catalog(home, Path(tempfile.gettempdir()) / "it-takes-me-models.json")
         self._client = CodexClient(
-            config=CodexConfig(cwd=str(cwd) if cwd else None),
+            config=CodexConfig(
+                cwd=str(cwd) if cwd else None,
+                config_overrides=lean_overrides(home, catalog),
+            ),
             approval_handler=self._on_server_request,
         )
         self._started = False
@@ -170,6 +253,7 @@ class CodexRuntime:
                 "model_reasoning_effort": reasoning_effort,
                 "model_auto_compact_token_limit": self._compact_threshold,
             },
+            "baseInstructions": BASE_INSTRUCTIONS,
             "developerInstructions": developer_instructions(character, extra_instructions),
             "sandbox": "read-only",
             "approvalPolicy": "never",

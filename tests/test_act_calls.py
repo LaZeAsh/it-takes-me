@@ -39,6 +39,16 @@ class ActCallTests(unittest.TestCase):
     def act(self, tools, steps: list[dict], **fields: object) -> dict:
         return tools.dispatch("act", {"task": "t", "intent": "go", "steps": steps, **fields})
 
+    def test_steps_text_plays_and_task_carries_over(self) -> None:
+        tools = self.tools()
+        response = tools.dispatch("act", {"steps": "run f 400"})
+        self.assertFalse(response["success"])
+        self.assertIn("no current task", texts(response)[0])
+        tools.dispatch("act", {"task": "reach the box", "steps": "run f 400"})
+        response = tools.dispatch("act", {"steps": "run f 400; jump f 500 h250"})
+        self.assertIn("task: reach the box", texts(response))
+        self.assertIn("done: 2 steps, 900 ms (run f 400; jump f 500 h250)", texts(response))
+
     def test_a_chunk_of_only_camera_turns_is_refused(self) -> None:
         tools = self.tools()
         for steps in ([LOOK], [LOOK, LOOK], [{"skill": "repeat", "times": 2, "steps": [LOOK]}]):

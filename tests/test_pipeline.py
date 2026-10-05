@@ -249,13 +249,8 @@ class PipelineTests(unittest.TestCase):
 
     def test_act_plays_a_repeat_and_the_schema_offers_it(self) -> None:
         tools = build_game_tools(self.io, frame_after_action=False)
-        schema = tools.tools["act"].input_schema["properties"]["steps"]["items"]
-        self.assertIn("repeat", schema["properties"]["skill"]["enum"])
-        inner = schema["properties"]["steps"]["items"]
-        self.assertNotIn("repeat", inner["properties"]["skill"]["enum"])
-        self.assertEqual(inner["properties"]["ms"]["maximum"], 10_000)
-        hop = [{"skill": "jump", "dir": "left"}, {"skill": "jump", "dir": "right"}]
-        response = self.act(tools, [{"skill": "repeat", "times": 5, "steps": hop}])
+        self.assertIn("<times>x(<steps>)", tools.tools["act"].description)
+        response = self.act(tools, "5x(jump l; jump r)")
         self.assertIn("done: 1 steps, 5000 ms (go)", texts(response))
         self.assertEqual(len(self.io.inputs), 21)
 
