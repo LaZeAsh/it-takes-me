@@ -16,6 +16,7 @@ dependencies = [
     "vgamepad>=0.1.0; sys_platform == 'win32'",
     "pydirectinput>=1.0.4; sys_platform == 'win32'",
     "python-dotenv>=1.2.4",
+    "claude-agent-sdk>=0.2.164",
 ]
 
 [dependency-groups]
@@ -34,14 +35,14 @@ packages = ["it_takes_me"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-src = ["it_takes_me", "run.py", "pad.py", "replay.py", "summarize.py"]
+src = ["it_takes_me", "run.py", "opus.py", "pad.py", "replay.py", "summarize.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.pyright]
 pythonVersion = "3.11"
-include = ["it_takes_me", "run.py", "pad.py", "replay.py", "summarize.py"]
+include = ["it_takes_me", "run.py", "opus.py", "pad.py", "replay.py", "summarize.py"]
 venvPath = "."
 venv = ".venv"
 typeCheckingMode = "standard"

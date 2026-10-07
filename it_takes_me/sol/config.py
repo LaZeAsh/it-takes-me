@@ -9,7 +9,8 @@ from typing import Literal
 from it_takes_me.game.tuning import MAX_CHUNK_MS
 from it_takes_me.vision import FrameDetail, ScreenHalf
 
-DEFAULT_MODEL = "gpt-6.1-sol"
+# DEFAULT_MODEL = "gpt-6.1-sol"
+DEFAULT_MODEL = "gpt-6-astra"
 DEFAULT_REASONING_EFFORT = "low"
 
 
@@ -31,6 +32,9 @@ class Settings:
     model_frame_jpeg_quality: int = 85
     max_chunk_ms: int = MAX_CHUNK_MS
     keyframes: int = 2
+    # Return long chunks early and allow keep_moving, so the model plans while it moves. Off:
+    # planning from a predicted position compounded errors; standing still costs nothing.
+    pipelining: bool = False
     compact_after_input_tokens: int = 244_800
     max_output_tokens: int = 4000
     api_store: bool = True

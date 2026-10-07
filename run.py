@@ -24,7 +24,7 @@ from rich.logging import RichHandler
 # Hyperparameters
 # ----------------------------------------------------------------------------------------------
 
-RUNTIME = "codex"  # "codex" uses your subscription; "responses" uses OPENAI_API_KEY
+RUNTIME = "codex"  # "codex": ChatGPT subscription; "responses": OPENAI_API_KEY; "claude": opus.py
 MODEL = DEFAULT_MODEL
 REASONING_EFFORT = DEFAULT_REASONING_EFFORT
 SERVICE_TIER: str | None = "priority"  # Codex "Fast" tier: ~2x speed, more usage. None = standard

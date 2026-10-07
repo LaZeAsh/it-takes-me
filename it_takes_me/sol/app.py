@@ -67,6 +67,7 @@ def play_session(
         on_chunk=lambda info: recorder.event("chunk", **info),
         max_calls_per_turn=settings.max_tool_calls_per_turn,
         instant_actions=instant_actions,
+        pipelining=settings.pipelining,
     )
     if settings.runtime == "codex":
         runtime = CodexRuntime(
@@ -82,6 +83,10 @@ def play_session(
             max_output_tokens=settings.max_output_tokens,
             store=settings.api_store,
         )
+    elif settings.runtime == "claude":
+        from it_takes_me.opus.runtime import ClaudeRuntime
+
+        runtime = ClaudeRuntime(tools=tools, cwd=settings.cwd)
     else:
         raise ValueError(f"unknown runtime: {settings.runtime}")
 
@@ -92,6 +97,7 @@ def play_session(
                 reasoning_effort=settings.reasoning_effort,
                 character=settings.character,
                 extra_instructions=settings.extra_instructions,
+                pipelining=settings.pipelining,
             )
             console.print(
                 f"session {session.id} on [bold]{session.model}[/bold] "

@@ -20,6 +20,8 @@ from it_takes_me.game.tuning import (
     LEAD_MIN_MS,
     LEAD_SMOOTHING,
     MAX_CHUNK_MS,
+    STALL_CHUNKS,
+    STALL_REPEAT,
 )
 from it_takes_me.sol.act_spec import act_description, act_schema
 from it_takes_me.sol.pad_thread import Job, PadThread
@@ -81,7 +83,12 @@ def build_game_tools(
     on_chunk: Callable[[dict[str, Any]], None] | None = None,
     max_calls_per_turn: int | None = None,
     instant_actions: bool = False,
+    pipelining: bool = False,
 ) -> ToolRegistry:
+    """Build the game tools. With `pipelining`, a long chunk returns before it ends so the next
+    one can be planned while it plays, and `keep_moving` can carry a final run into the next
+    chunk; both make the model plan from where it predicts it will be. Without it, every chunk
+    returns its end frame and the model plans from what it sees."""
     reg = ToolRegistry(max_calls_per_turn=max_calls_per_turn)
     encoder = frame_encoder or ModelFrameEncoder(half=screen_half)
 
@@ -99,6 +106,10 @@ def build_game_tools(
     pad = new_pad()
     lead = LeadTimer()
     last: _Played | None = None
+    # Chunks played (and when the first started) under the current task, for the stall nudge.
+    stall_task: str | None = None
+    stall_chunks = 0
+    stall_since = 0.0
     # `pad.epoch` as of the newest frame the model has. A chunk stopped early raises the epoch,
     # so a plan made from an older frame assumed something that did not happen.
     seen_epoch = 0
@@ -167,6 +178,11 @@ def build_game_tools(
                 "carry_ms": job.carry_ms,
                 "carry_reason": job.carry_reason,
                 "lead_ms": round(p.lead_ms),
+                # Raw numbers behind each landing verdict, for tuning the thresholds.
+                "jumps": [
+                    {"step": j.label, "change": j.change, "shift": j.shift, "verdict": j.verdict}
+                    for j in (result.jumps if result else [])
+                ],
             }
         )
 
@@ -240,6 +256,31 @@ def build_game_tools(
         reg.current_task = task
         return f"task {current!r} {outcome}; new task: {task}"
 
+    def stall_nudge() -> str | None:
+        """Count a played chunk under the current task; past the limit, ask to step back."""
+        nonlocal stall_task, stall_chunks, stall_since
+        task = reg.current_task
+        if task is None:
+            stall_task, stall_chunks = None, 0
+            return None
+        if task != stall_task:
+            stall_task, stall_chunks, stall_since = task, 0, time.monotonic()
+        stall_chunks += 1
+        over = stall_chunks - STALL_CHUNKS
+        if over < 0 or over % STALL_REPEAT:
+            return None
+        seconds = round(time.monotonic() - stall_since)
+        return (
+            f"STEP BACK: you have played {stall_chunks} chunks ({seconds} s) on the task "
+            f"{task!r} without finishing it. Before the next chunk, ask whether what you are "
+            "doing is actually on the way to the objective or only near the marker (the marker "
+            "shows through walls and objects, so the way may be around them, not over them). "
+            "Look at your partner's half of the screen: they may already be past this point, "
+            "and their view shows the way they took. Use `locate_partner` to find them. If "
+            "this approach is not working, try a different route, or switch with "
+            '`previous_task: "blocked"`.'
+        )
+
     def rejected(prev: _Played | None, intent: str) -> list[ContentItem]:
         """The chunk before this one stopped early; this one was planned assuming it would not."""
         nonlocal seen_epoch
@@ -275,7 +316,8 @@ def build_game_tools(
         segments = compile_chunk(steps, max_chunk_ms)
         said = " ".join(str(a.get("say", "")).split())
         if (
-            observe != "keyframes"
+            pipelining
+            and observe != "keyframes"
             and not said
             and all(step.get("skill") == "look" for _, _, step in expand_repeats(steps))
         ):
@@ -285,6 +327,8 @@ def build_game_tools(
                 'scan around, use observe: "keyframes" to see several views. Nothing was pressed.'
             )
         keep_moving = a.get("keep_moving") is True
+        if keep_moving and not pipelining:
+            raise ValueError("keep_moving is not available in this session. Nothing was pressed.")
         if keep_moving and (steps[-1].get("skill") != "run" or segments[-1].state.left == (0, 0)):
             raise ValueError("keep_moving needs the last step to be a run with a direction")
         task_line = commit_task(a)
@@ -300,7 +344,7 @@ def build_game_tools(
         total = sum(s.ms for s in segments)
         release = (
             release_point(total, lead.ms)
-            if observe == "early" and not instant_actions and frame_after_action
+            if pipelining and observe == "early" and not instant_actions and frame_after_action
             else None
         )
         job = pad.submit(
@@ -329,13 +373,13 @@ def build_game_tools(
             raise job.error
         seen_epoch = job.frame_epoch
         result = job.result
-        if prev is not None and job.idle_ms >= IDLE_REPORT_MS:
+        if pipelining and prev is not None and job.idle_ms >= IDLE_REPORT_MS:
             played = result.elapsed_ms if result and job.frame_ms is None else total
             share = round(100 * played / (played + job.idle_ms))
             items.append(
                 text_item(
                     f"You stood still for {job.idle_ms} ms planning, then played {played} ms "
-                    f"({share}% of the time moving). Longer chunks waste less."
+                    f"({share}% of the time moving)."
                 )
             )
         if job.frame_ms is not None:
@@ -360,7 +404,14 @@ def build_game_tools(
                 task_line = (
                     "task cleared: the scene changed. Define your task again from this frame."
                 )
-        items += [text_item(summary), text_item(task_line), *said_items]
+        items.append(text_item(summary))
+        # "moved" (the view changed too much to tell) only goes to the chunk log.
+        landings = [j.describe() for j in result.jumps if j.verdict != "moved"] if result else []
+        if job.frame_ms is None and landings:
+            items.append(text_item("landings: " + "; ".join(landings)))
+        items += [text_item(task_line), *said_items]
+        if nudge := stall_nudge():
+            items.append(text_item(nudge))
         for t, png in result.shots if result else []:
             items += [text_item(f"keyframe at {t} ms"), frame(png, f"keyframe {t}ms: {intent}")]
         if job.frame is not None:
@@ -383,8 +434,8 @@ def build_game_tools(
     reg.progress_hooks.append(progress)
     reg.register(
         "act",
-        act_description(max_chunk_ms, keyframes),
-        act_schema(max_chunk_ms),
+        act_description(max_chunk_ms, keyframes, pipelining=pipelining),
+        act_schema(max_chunk_ms, pipelining=pipelining),
         act,
     )
     return reg

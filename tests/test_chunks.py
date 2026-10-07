@@ -99,11 +99,11 @@ class ActionTimingTests(unittest.TestCase):
             [frozenset({Button.A}), frozenset(), frozenset({Button.X}), frozenset(), frozenset()],
         )
 
-    def test_defaults_preserve_original_durations(self) -> None:
+    def test_skill_default_durations(self) -> None:
         totals = {
             "run": 500,
-            "jump": 500,
-            "double_jump": 850,
+            "jump": 650,
+            "double_jump": 1150,
             "dash": 350,
             "jump_dash": 700,
             "ground_pound": 600,
@@ -118,6 +118,17 @@ class ActionTimingTests(unittest.TestCase):
             with self.subTest(skill=skill):
                 step = {"skill": skill, **MOVING.get(skill, {})}
                 self.assertEqual(sum(s.ms for s in compile_step(step)), total)
+
+    def test_jumps_hold_for_full_height_unless_told_otherwise(self) -> None:
+        def a_ms(step: dict) -> list[int]:
+            return [s.ms for s in compile_step(step) if Button.A in s.state.buttons]
+
+        self.assertEqual(a_ms({"skill": "jump", "dir": "forward"}), [250])
+        self.assertEqual(a_ms({"skill": "double_jump", "dir": "forward"}), [250, 250])
+        self.assertEqual(a_ms({"skill": "jump", "dir": "forward", "hold_ms": 100}), [100])
+        # A short explicit ms shrinks the default hold instead of rejecting the step.
+        self.assertEqual(a_ms({"skill": "jump", "dir": "forward", "ms": 200}), [200])
+        self.assertEqual(a_ms({"skill": "double_jump", "dir": "forward", "ms": 650}), [200, 200])
 
     def test_all_skills_honor_total_duration(self) -> None:
         skills = [
@@ -215,7 +226,7 @@ class ActionTimingTests(unittest.TestCase):
         )
 
     def test_keep_moving_holds_the_run_until_the_next_call(self) -> None:
-        tools = build_game_tools(self.io, frame_after_action=False)
+        tools = build_game_tools(self.io, frame_after_action=False, pipelining=True)
         run = [{"skill": "run", "dir": "forward", "sprint": True, "ms": 500}]
         response = tools.dispatch(
             "act", {"task": "t", "intent": "go", "steps": run, "keep_moving": True}
@@ -233,7 +244,7 @@ class ActionTimingTests(unittest.TestCase):
         self.assertIsNone(tools.settle())
 
     def test_keep_moving_requires_a_final_directional_run(self) -> None:
-        tools = build_game_tools(self.io, frame_after_action=False)
+        tools = build_game_tools(self.io, frame_after_action=False, pipelining=True)
         for steps in ([{"skill": "jump", "dir": "forward"}], [{"skill": "run", "dir": "none"}]):
             with self.subTest(steps=steps):
                 response = tools.dispatch(
@@ -243,7 +254,7 @@ class ActionTimingTests(unittest.TestCase):
         self.assertEqual(self.io.inputs, [])
 
     def test_carry_stops_on_scene_cut_and_clears_task(self) -> None:
-        tools = build_game_tools(self.io, frame_after_action=False)
+        tools = build_game_tools(self.io, frame_after_action=False, pipelining=True)
         run = [{"skill": "run", "dir": "forward", "ms": 500}]
         tools.dispatch("act", {"task": "t", "intent": "go", "steps": run, "keep_moving": True})
         self.io.snapshot_fn = lambda size, n: Image.new("L", size, 255)

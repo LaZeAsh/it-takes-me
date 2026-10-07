@@ -24,8 +24,10 @@ from .tuning import (
     INTERACT,
     JUMP,
     JUMP_AIR_MS,
+    JUMP_HOLD_MS,
     LOCATE_PARTNER,
     LOCATE_PARTNER_AFTER_MS,
+    LOOK_MS_PER_TURN,
     MAX_CHUNK_MS,
     MAX_REPEAT,
     SKIP_CUTSCENE,
@@ -74,6 +76,8 @@ SKILLS = (
 )
 BUTTON_SKILLS = frozenset(s for s in SKILLS if s not in ("run", "look", "raw"))
 REPEAT = "repeat"  # a block of steps played `times` in a row; expanded before compiling
+# Skills whose landing playback checks (see `playback.jump_outcome`).
+JUMP_SKILLS = ("jump", "double_jump", "jump_dash")
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +86,9 @@ class Segment:
     state: PadState
     until: frozenset[str] = frozenset()
     step: int = 0  # index of the step this came from
+    # On every segment of a jump step: its label, e.g. "2 (jump)". Playback compares the view
+    # before and after the step to tell the model whether the jump got it anywhere.
+    jump: str = ""
 
 
 def _dir(step: dict[str, Any]) -> tuple[float, float]:
@@ -110,6 +117,18 @@ def _fraction(step: dict[str, Any], key: str) -> float:
     if isinstance(value, bool) or not isinstance(value, int | float) or not 0.1 <= value <= 1:
         raise ValueError(f"{key} must be a number from 0.1 to 1")
     return float(value)
+
+
+def _turn_ms(step: dict[str, Any], word: str) -> int:
+    """How long to hold the right stick fully over to turn the camera `degrees`."""
+    if word not in ("left", "right"):
+        raise ValueError("degrees only work on look left or right; use ms for up and down")
+    if "ms" in step or "look_speed" in step:
+        raise ValueError("give a turn in degrees or in ms (with look_speed), not both")
+    degrees = step["degrees"]
+    if isinstance(degrees, bool) or not isinstance(degrees, int | float) or not 0 < degrees <= 360:
+        raise ValueError("degrees must be a number from 1 to 360")
+    return max(1, round(degrees * LOOK_MS_PER_TURN / 360))
 
 
 def _ms(step: dict[str, Any], default: int) -> int:
@@ -149,10 +168,15 @@ def compile_step(step: dict[str, Any]) -> list[Segment]:
         raise ValueError("`look_speed` only works on look")
     if "gap_ms" in step and skill not in ("double_jump", "jump_dash"):
         raise ValueError("`gap_ms` only works on double_jump and jump_dash")
+    if "degrees" in step and skill != "look":
+        raise ValueError("`degrees` only works on look")
 
-    def press(button: Button, default_ms: int, *, sustained: bool = False) -> list[Segment]:
+    def press(
+        button: Button, default_ms: int, *, sustained: bool = False, tap: int = TAP_MS
+    ) -> list[Segment]:
         total = _ms(step, default_ms)
-        hold = _timing(step, "hold_ms", total if sustained else TAP_MS)
+        # A default hold shrinks to fit a shorter explicit ms; an explicit hold_ms must fit.
+        hold = _timing(step, "hold_ms", total if sustained else min(tap, total))
         if hold > total:
             raise ValueError("hold_ms cannot exceed the step's total ms")
         pressed = replace(moving, buttons=frozenset({button}))
@@ -161,10 +185,10 @@ def compile_step(step: dict[str, Any]) -> list[Segment]:
             segments.append(Segment(total - hold, moving))
         return segments
 
-    def pair(first: Button, second: Button, default_ms: int) -> list[Segment]:
+    def pair(first: Button, second: Button, default_ms: int, tap: int = TAP_MS) -> list[Segment]:
         total = _ms(step, default_ms)
-        hold = _timing(step, "hold_ms", TAP_MS)
         gap = _timing(step, "gap_ms", DOUBLE_JUMP_GAP_MS)
+        hold = _timing(step, "hold_ms", max(1, min(tap, (total - gap) // 2)))
         used = 2 * hold + gap
         if used > total:
             raise ValueError("ms must cover both button holds and gap_ms (2 * hold_ms + gap_ms)")
@@ -190,9 +214,11 @@ def compile_step(step: dict[str, Any]) -> list[Segment]:
             until |= frozenset(CONDITIONS)
         return [Segment(ms, PadState(left=left, buttons=buttons), until)]
     if skill == "jump":
-        return press(JUMP, TAP_MS + JUMP_AIR_MS)
+        return press(JUMP, JUMP_HOLD_MS + JUMP_AIR_MS, tap=JUMP_HOLD_MS)
     if skill == "double_jump":
-        return pair(JUMP, JUMP, 2 * TAP_MS + DOUBLE_JUMP_GAP_MS + JUMP_AIR_MS)
+        return pair(
+            JUMP, JUMP, 2 * JUMP_HOLD_MS + DOUBLE_JUMP_GAP_MS + JUMP_AIR_MS, tap=JUMP_HOLD_MS
+        )
     if skill == "dash":
         return press(DASH, TAP_MS + DASH_AFTER_MS)
     if skill == "jump_dash":
@@ -213,6 +239,8 @@ def compile_step(step: dict[str, Any]) -> list[Segment]:
         if word not in LOOK_DIRECTIONS:
             raise ValueError(f"unknown look direction {word!r}; use one of {list(LOOK_DIRECTIONS)}")
         x, y = LOOK_DIRECTIONS[word]
+        if "degrees" in step:
+            return [Segment(_turn_ms(step, word), PadState(left=left, right=(x, y)))]
         turn = _fraction(step, "look_speed")
         return [Segment(_ms(step, 200), PadState(left=left, right=(x * turn, y * turn)))]
     if skill == "locate_partner":
@@ -237,8 +265,9 @@ def compile_step(step: dict[str, Any]) -> list[Segment]:
     raise ValueError(f"unknown skill {skill!r}; use one of {list(SKILLS)}")
 
 
-# Shortest time a directional jump must keep steering when nothing airborne follows it: the
-# skill defaults, which cover the airtime. Releasing the stick earlier drops the character short.
+# Shortest time a directional jump must keep steering when nothing airborne follows it, counted
+# from tapped presses so a shorter explicit hold still passes; the skill defaults cover it.
+# Releasing the stick earlier drops the character short.
 AIRTIME_MS = {
     "jump": TAP_MS + JUMP_AIR_MS,
     "double_jump": 2 * TAP_MS + DOUBLE_JUMP_GAP_MS + JUMP_AIR_MS,
@@ -302,6 +331,12 @@ def expand_repeats(steps: list[dict[str, Any]]) -> list[tuple[int, str, dict[str
     return flat
 
 
+def _jump_label(label: str, skill: str) -> str:
+    """ "2" -> "2 (jump)"; "3.0 (repeat 1/2)" -> "3.0 (jump, repeat 1/2)"."""
+    index, _, repeat = label.partition(" (")
+    return f"{index} ({skill}, {repeat}" if repeat else f"{index} ({skill})"
+
+
 def compile_chunk(steps: list[dict[str, Any]], max_ms: int = MAX_CHUNK_MS) -> list[Segment]:
     """Compile a chunk; each segment's `step` is the top-level step it came from."""
     flat = expand_repeats(steps)
@@ -309,7 +344,8 @@ def compile_chunk(steps: list[dict[str, Any]], max_ms: int = MAX_CHUNK_MS) -> li
     segments: list[Segment] = []
     for k, (_, label, step) in enumerate(flat):
         try:
-            segments += [replace(seg, step=k) for seg in compile_step(step)]
+            jump = _jump_label(label, step["skill"]) if step.get("skill") in JUMP_SKILLS else ""
+            segments += [replace(seg, step=k, jump=jump) for seg in compile_step(step)]
         except ValueError as exc:
             raise ValueError(f"step {label}: {exc}") from exc
     _check_air_steering([step for _, _, step in flat], segments, labels)

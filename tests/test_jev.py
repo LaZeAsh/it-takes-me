@@ -138,7 +138,7 @@ class ActionSpaceTests(unittest.TestCase):
         )
         self.assertEqual(step, {"skill": "jump", "dir": "forward"})
         self.assertIn("default timing", note)
-        self.assertEqual(sum(s.ms for s in segments), 500)
+        self.assertEqual(sum(s.ms for s in segments), 650)
 
 
 class DecisionTests(unittest.TestCase):

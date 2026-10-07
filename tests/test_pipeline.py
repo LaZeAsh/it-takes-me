@@ -56,8 +56,11 @@ class PipelineTests(unittest.TestCase):
         self.assertIsNone(release_point(200, 1000))
 
     def test_early_act_returns_a_mid_chunk_frame_and_says_what_is_left(self) -> None:
-        tools = build_game_tools(self.io)
-        run = [{"skill": "run", "dir": "forward", "ms": 8500}, {"skill": "jump", "dir": "forward"}]
+        tools = build_game_tools(self.io, pipelining=True)
+        run = [
+            {"skill": "run", "dir": "forward", "ms": 8500},
+            {"skill": "jump", "dir": "forward", "ms": 500},
+        ]
         response = self.act(tools, run)
         self.assertTrue(response["success"])
         summary = texts(response)[0]
@@ -65,14 +68,28 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("step 0 (run) onward is still playing, about 3500 ms more", summary)
         self.assertIn("frame at 5500 ms", texts(response))
 
-    def test_short_chunk_returns_its_end_frame(self) -> None:
+    def test_without_pipelining_a_long_chunk_returns_its_end_frame(self) -> None:
         tools = build_game_tools(self.io)
+        run = [
+            {"skill": "run", "dir": "forward", "ms": 8500},
+            {"skill": "jump", "dir": "forward", "ms": 500},
+        ]
+        response = self.act(tools, run)
+        self.assertIn("done: 2 steps, 9000 ms (go)", texts(response))
+        self.assertIn("end of chunk", texts(response))
+        self.assertNotIn("keep_moving", tools.tools["act"].input_schema["properties"])
+        refused = self.act(tools, [{"skill": "run", "dir": "forward"}], keep_moving=True)
+        self.assertFalse(refused["success"])
+        self.assertIn("keep_moving is not available", texts(refused)[0])
+
+    def test_short_chunk_returns_its_end_frame(self) -> None:
+        tools = build_game_tools(self.io, pipelining=True)
         response = self.act(tools, [{"skill": "run", "dir": "forward", "ms": 2500}])
         self.assertIn("done: 1 steps, 2500 ms (go)", texts(response))
         self.assertIn("end of chunk", texts(response))
 
     def test_next_chunk_reports_how_the_previous_one_ended(self) -> None:
-        tools = build_game_tools(self.io)
+        tools = build_game_tools(self.io, pipelining=True)
         self.act(tools, [{"skill": "run", "dir": "forward", "ms": 9000}])
         response = self.act(tools, [{"skill": "run", "dir": "forward", "ms": 300}])
         self.assertIn("Your previous chunk finished all its steps (go).", texts(response)[0])
@@ -83,7 +100,7 @@ class PipelineTests(unittest.TestCase):
     def test_chunk_planned_before_an_early_stop_is_not_played(self) -> None:
         # The view freezes about 7 s in: after the frame at 5500 ms went back to the model.
         self.io.snapshot_fn = lambda size, n: Image.new("L", size, min(n, 70) * 3)
-        tools = build_game_tools(self.io)
+        tools = build_game_tools(self.io, pipelining=True)
         first = self.act(tools, [{"skill": "run", "dir": "forward", "ms": 9000}])
         self.assertIn("playing:", texts(first)[0])
         threading.Event().wait(0.2)  # the pad thread finishes the chunk on the fake clock
@@ -139,7 +156,7 @@ class PipelineTests(unittest.TestCase):
             return moving_view(size, n)
 
         self.io.snapshot_fn = gated
-        tools = build_game_tools(self.io)
+        tools = build_game_tools(self.io, pipelining=True)
         self.act(tools, [{"skill": "run", "dir": "forward", "ms": 9000}])
         note = tools.progress()
         self.assertIsNotNone(note)
@@ -158,7 +175,7 @@ class PipelineTests(unittest.TestCase):
             return moving_view(size, n)
 
         self.io.snapshot_fn = gated
-        tools = build_game_tools(self.io, frame_after_action=False)
+        tools = build_game_tools(self.io, frame_after_action=False, pipelining=True)
         done = threading.Thread(
             target=self.act, args=(tools, [{"skill": "run", "dir": "forward", "ms": 9000}])
         )
@@ -170,7 +187,7 @@ class PipelineTests(unittest.TestCase):
         self.assertLess(self.io.inputs[-1][0], 9000)
 
     def test_observe_end_is_refused_before_anything_is_pressed(self) -> None:
-        tools = build_game_tools(self.io)
+        tools = build_game_tools(self.io, pipelining=True)
         schema = tools.tools["act"].input_schema["properties"]["observe"]
         self.assertEqual(schema["enum"], ["keyframes"])
         response = self.act(tools, [{"skill": "run", "dir": "forward", "ms": 300}], observe="end")
@@ -248,9 +265,9 @@ class PipelineTests(unittest.TestCase):
             compile_chunk([{"skill": "repeat", "times": 2, "steps": short_hop}])
 
     def test_act_plays_a_repeat_and_the_schema_offers_it(self) -> None:
-        tools = build_game_tools(self.io, frame_after_action=False)
+        tools = build_game_tools(self.io, frame_after_action=False, pipelining=True)
         self.assertIn("<times>x(<steps>)", tools.tools["act"].description)
-        response = self.act(tools, "5x(jump l; jump r)")
+        response = self.act(tools, "5x(jump l 500; jump r 500)")
         self.assertIn("done: 1 steps, 5000 ms (go)", texts(response))
         self.assertEqual(len(self.io.inputs), 21)
 

@@ -165,6 +165,7 @@ class PadThread:
                     halt=self._halt,
                     release_ms=job.release_ms if job.capture else None,
                     on_release=release,
+                    check_jumps=True,
                 )
             if job.result.stopped is not None:
                 self.epoch += 1

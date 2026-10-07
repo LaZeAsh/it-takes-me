@@ -15,7 +15,11 @@ class GameplayPolicyTests(unittest.TestCase):
 
         self.assertIn("act from it immediately", prompt)
         self.assertIn("only gives a high-detail frame", prompt)
-        self.assertIn("keep_moving", prompt)
+        self.assertNotIn("keep_moving", prompt)
+        self.assertIn("Nothing moves while you plan", prompt)
+        piped = developer_instructions("May", pipelining=True)
+        self.assertIn("keep_moving", piped)
+        self.assertIn("**Pipelining.**", piped)
 
     def test_prompt_prioritizes_on_screen_markers(self) -> None:
         prompt = developer_instructions("May")

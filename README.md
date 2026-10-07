@@ -71,11 +71,12 @@ default airtime, or `act` rejects the chunk before pressing anything. Releasing 
 `skip_cutscene` holds B with neutral sticks to skip a cutscene. Its default duration is 2,000 ms;
 the model can choose a longer `ms` if needed and inspects the returned frame before moving again.
 
-For example, this runs up to a gap, then jumps with a 150 ms press and keeps moving forward for
-800 ms total:
+`jump` and `double_jump` hold A for 250 ms by default, because jump height grows with the hold and
+a 100 ms tap is only a short hop; `h100` asks for the hop. For example, this runs up to a gap, then
+makes a full-height jump and keeps moving forward for 800 ms total:
 
 ```json
-{"steps": "run f 600; jump f 800 h150"}
+{"steps": "run f 600; jump f 800"}
 ```
 
 For a clear stretch of traversal, the model can request a single 7,000 ms run rather than many
@@ -180,6 +181,21 @@ The Responses runtime uses the same game tools and recordings, chains calls with
 `previous_response_id`, records the full usage breakdown, and enables server-side compaction. Codex
 remains the default runtime.
 
+## Opus (Claude subscription)
+
+`opus.py` runs Claude Opus 5.5 as the player through Claude Code (the Claude Agent SDK, which
+bundles it), billed to your Claude subscription. Sign in once with the `claude` CLI, then:
+
+```powershell
+uv run python opus.py
+```
+
+Other settings come from `run.py`; the effort is set at the top of `opus.py`. The runtime
+(`it_takes_me/opus/runtime.py`) serves the same game tools from an in-process MCP server and
+turns everything else off: Claude Code's own tools, your settings, hooks, plugins, MCP servers,
+CLAUDE.md files and auto-memory. It also blanks `ANTHROPIC_API_KEY` for the subprocess so the
+subscription login is used. Lines you type mid-turn reach the model with its next tool result.
+
 ## Replay and compare
 
 Run recorded frames through either harness without starting the game or waiting for controller
@@ -188,6 +204,7 @@ timings:
 ```bash
 uv run python replay.py runs/20260927-232307 --runtime codex --turns 2
 uv run python replay.py runs/20260927-232307 --runtime responses --turns 2
+uv run python replay.py runs/20260927-232307 --runtime claude --turns 2
 ```
 
 Compare existing or replay runs:

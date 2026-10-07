@@ -245,6 +245,7 @@ class CodexRuntime:
         character: str,
         extra_instructions: list[str] | None,
         ephemeral: bool,
+        pipelining: bool,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "model": model,
@@ -254,7 +255,9 @@ class CodexRuntime:
                 "model_auto_compact_token_limit": self._compact_threshold,
             },
             "baseInstructions": BASE_INSTRUCTIONS,
-            "developerInstructions": developer_instructions(character, extra_instructions),
+            "developerInstructions": developer_instructions(
+                character, extra_instructions, pipelining=pipelining
+            ),
             "sandbox": "read-only",
             "approvalPolicy": "never",
             "ephemeral": ephemeral,
@@ -273,6 +276,7 @@ class CodexRuntime:
         character: str,
         extra_instructions: list[str] | None = None,
         ephemeral: bool = False,
+        pipelining: bool = False,
     ) -> Thread:
         payload = self._thread_payload(
             model=model,
@@ -280,6 +284,7 @@ class CodexRuntime:
             character=character,
             extra_instructions=extra_instructions,
             ephemeral=ephemeral,
+            pipelining=pipelining,
         )
         started = self._client.thread_start(payload)
         log.info("thread %s started on model %s", started.thread.id, started.model)
@@ -293,6 +298,7 @@ class CodexRuntime:
         character: str,
         extra_instructions: list[str] | None = None,
         ephemeral: bool = False,
+        pipelining: bool = False,
     ) -> CodexSession:
         payload = self._thread_payload(
             model=model,
@@ -300,6 +306,7 @@ class CodexRuntime:
             character=character,
             extra_instructions=extra_instructions,
             ephemeral=ephemeral,
+            pipelining=pipelining,
         )
         started = self._client.thread_start(payload)
         log.info("thread %s started on model %s", started.thread.id, started.model)

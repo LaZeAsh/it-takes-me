@@ -7,6 +7,7 @@ of a JSON list. Every output token costs planning time; JSON keys were about hal
     token := f|b|l|r|fl|fr|bl|br|none   direction (look: l|r|u|d)
            | @<deg>                     heading, 0 forward, 90 right
            | <int>                      ms
+           | <num>deg                   look l/r: turn the camera this many degrees
            | h<int> | g<int>            hold_ms | gap_ms
            | s<num>                     speed (look: look_speed)
            | sprint | stuck | cut       run flags
@@ -94,6 +95,8 @@ def _step(text: str) -> dict[str, Any]:
             step["heading"] = float(token[1:])
         elif token.isdigit():
             step["ms"] = int(token)
+        elif token.endswith("deg") and _NUMBER.match(token[:-3]):
+            step["degrees"] = float(token[:-3])
         elif token[0] in "hg" and len(token) > 1:
             step["hold_ms" if token[0] == "h" else "gap_ms"] = _int(token, token[1:])
         elif token[0] == "s" and _NUMBER.match(token[1:]):

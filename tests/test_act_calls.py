@@ -33,11 +33,33 @@ class ActCallTests(unittest.TestCase):
         self.enterContext(patch("it_takes_me.sol.pad_thread.time.sleep", self.clock.sleep))
         self.said: list[str] = []
 
-    def tools(self):
-        return build_game_tools(self.io, frame_after_action=False, on_say=self.said.append)
+    def tools(self, **options: object):
+        return build_game_tools(
+            self.io, frame_after_action=False, on_say=self.said.append, **options
+        )
 
     def act(self, tools, steps: list[dict], **fields: object) -> dict:
         return tools.dispatch("act", {"task": "t", "intent": "go", "steps": steps, **fields})
+
+    def test_a_long_stretch_on_one_task_gets_a_nudge_to_step_back(self) -> None:
+        tools = self.tools()
+
+        def nudges(n: int, **first: object) -> list[str | None]:
+            out = []
+            for k in range(n):
+                fields = first if k == 0 else {}
+                response = tools.dispatch("act", {"intent": "go", "steps": [RUN], **fields})
+                out.append(next((t for t in texts(response) if t.startswith("STEP BACK")), None))
+            return out
+
+        first = nudges(8, task="climb")
+        self.assertEqual(first[:7], [None] * 7)
+        self.assertIn("8 chunks", first[7])
+        self.assertIn("'climb'", first[7])
+        self.assertEqual([bool(n) for n in nudges(6)], [False] * 5 + [True])  # chunk 14
+        # A new task starts the count again.
+        again = nudges(8, task="go around", previous_task="blocked")
+        self.assertEqual([bool(n) for n in again], [False] * 7 + [True])
 
     def test_steps_text_plays_and_task_carries_over(self) -> None:
         tools = self.tools()
@@ -49,8 +71,8 @@ class ActCallTests(unittest.TestCase):
         self.assertIn("task: reach the box", texts(response))
         self.assertIn("done: 2 steps, 900 ms (run f 400; jump f 500 h250)", texts(response))
 
-    def test_a_chunk_of_only_camera_turns_is_refused(self) -> None:
-        tools = self.tools()
+    def test_a_chunk_of_only_camera_turns_is_refused_when_pipelining(self) -> None:
+        tools = self.tools(pipelining=True)
         for steps in ([LOOK], [LOOK, LOOK], [{"skill": "repeat", "times": 2, "steps": [LOOK]}]):
             with self.subTest(steps=steps):
                 response = self.act(tools, steps)
@@ -58,6 +80,9 @@ class ActCallTests(unittest.TestCase):
                 self.assertIn("Add the move that follows the turn", texts(response)[0])
         self.assertEqual(self.io.inputs, [])
         self.assertTrue(self.act(tools, [LOOK, RUN])["success"])
+
+    def test_a_chunk_of_only_camera_turns_plays_without_pipelining(self) -> None:
+        self.assertTrue(self.act(self.tools(), [LOOK])["success"])
 
     def test_a_camera_scan_with_keyframes_or_a_line_to_say_is_allowed(self) -> None:
         self.io.capture_image = lambda: Image.new("RGB", (64, 36))  # keyframes need frames
@@ -79,14 +104,13 @@ class ActCallTests(unittest.TestCase):
         self.act(tools, [{"skill": "run", "ms": 400}], say="hello")
         self.assertEqual(self.said, [])
 
-    def test_results_report_the_share_of_time_spent_moving(self) -> None:
-        tools = self.tools()
+    def test_results_report_the_share_of_time_spent_moving_when_pipelining(self) -> None:
+        tools = self.tools(pipelining=True)
         self.act(tools, [RUN])
         self.clock.sleep(1.2)  # the model plans for 1.2 s
         response = self.act(tools, [RUN])
         self.assertIn(
-            "You stood still for 1200 ms planning, then played 400 ms (25% of the time moving). "
-            "Longer chunks waste less.",
+            "You stood still for 1200 ms planning, then played 400 ms (25% of the time moving).",
             texts(response),
         )
 

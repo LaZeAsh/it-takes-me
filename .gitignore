@@ -20,3 +20,4 @@ build/
 
 # Project: per-session recordings (frames + event logs)
 runs/
+*.mp4
